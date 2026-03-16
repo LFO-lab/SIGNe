@@ -1,8 +1,9 @@
 inlets = 1;
-outlets = 3;
+outlets = 4; 
 // Outlet 0: Drawing commands to jit.gl.sketch
 // Outlet 1: Queries to jit.phys.picker
 // Outlet 2: Selection state & movement to your forward object
+// Outlet 3: Commands for the 3D Selection Sketch
 
 var isDraggingMarquee = false;
 var isDraggingGroup = false;
@@ -54,6 +55,8 @@ function ui_move_x(id, x) {
     
     outlet(2, "send", id);
     outlet(2, "move_x", newX);
+
+    draw_selections();
 }
 
 function ui_move_y(id, y) {
@@ -63,6 +66,8 @@ function ui_move_y(id, y) {
     
     outlet(2, "send", id);
     outlet(2, "move_y", newY);
+
+    draw_selections();
 }
 
 // ---------------------------------------------------------
@@ -119,6 +124,8 @@ function camera_pos(cx, cy) {
                 }
             }
         }
+
+        draw_selections();
     }
     
     // Store the current camera position for the next frame
@@ -150,6 +157,7 @@ function picker_hit(target, state) {
                 
                 a2x = (curX / winW) * 2.0 - 1.0;
                 a2y = 1.0 - (curY / winH) * 2.0;
+                draw_selections();
                 outlet(1, "getposition");
                 
             } else {
@@ -174,7 +182,8 @@ function picker_hit(target, state) {
                 isDraggingGroup = true;
                 isDraggingMarquee = false;
                 got3DAnchor = false;
-                
+
+                draw_selections();
                 take_group_snapshot(registry);
                 outlet(1, "getposition");
             }
@@ -262,6 +271,8 @@ function update_group_positions() {
             outlet(2, "move_y", newY);
         }
     }
+
+    draw_selections();
 }
 
 function release_group() { isDraggingGroup = false; }
@@ -296,5 +307,42 @@ function release_selection() {
         registry.set(id + "::selected", isSelected);
         outlet(2, "send", id); 
         outlet(2, "selected", isSelected); 
+    }
+
+    draw_selections();
+}
+
+// ---------------------------------------------------------
+// CENTRALIZED VISUAL FEEDBACK
+// ---------------------------------------------------------
+function draw_selections() {
+    var registry = new Dict("SigneRegistry");
+    var keys = registry.getkeys();
+    
+    // Clear the sketch canvas
+    outlet(3, "reset");
+    outlet(3, "glcolor", 1.0, 0.8, 0.0, 1.0); // Yellow outline
+    
+    if (keys == null) return;
+    if (typeof keys === "string") keys = [keys];
+    
+    for (var i = 0; i < keys.length; i++) {
+        var id = keys[i];
+        if (registry.get(id + "::selected") === 1) {
+            
+            var x = registry.get(id + "::x");
+            var y = registry.get(id + "::y");
+            var sx = registry.get(id + "::scale_x") || 0.0;
+            var sy = registry.get(id + "::scale_y") || 0.0;
+            
+            // Calculate the 4 corners (using your 1:1 scale math)
+            var minX = x - sx;
+            var maxX = x + sx;
+            var minY = y - sy;
+            var maxY = y + sy;
+            
+            // Draw the wireframe quad: TopLeft, TopRight, BottomRight, BottomLeft
+            outlet(3, "framequad", minX, maxY, 0.0, maxX, maxY, 0.0, maxX, minY, 0.0, minX, minY, 0.0);
+        }
     }
 }
