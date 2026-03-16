@@ -373,7 +373,7 @@ function update_group_rotation() {
             var newY = groupCy + (dx * sinTheta) + (dy * cosTheta);
             
             // 3. Rotate the object itself
-            var newRot = brot - angleDelta;
+            var newRot = brot + angleDelta;
             
             registry.set(id + "::x", newX);
             registry.set(id + "::y", newY);
@@ -562,7 +562,7 @@ function draw_selections() {
             
             // Move to the object's center, then rotate around the Z axis
             outlet(3, "gltranslate", x, y, 0.0);
-            outlet(3, "glrotate", -rot, 0.0, 0.0, 1.0); 
+            outlet(3, "glrotate", rot, 0.0, 0.0, 1.0); 
             
             // Draw the quad around the local 0,0 center
             outlet(3, "framequad", -sx, sy, 0.0, sx, sy, 0.0, sx, -sy, 0.0, -sx, -sy, 0.0);
