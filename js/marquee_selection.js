@@ -14,6 +14,7 @@ var isDraggingMarquee = false;
 var isDraggingGroup = false;
 var isScalingGroup = false;
 var isRotatingGroup = false;
+var isAdjustingOpacityGroup = false; // NEW: Opacity state
 var isScrubbing = false; 
 var handledClick = false; 
 var prevBtn = 0;
@@ -21,9 +22,12 @@ var got3DAnchor = false;
 
 var isAltDown = 0;
 var isShiftDown = 0;
+var isODown = 0; // NEW: 'o' key state
 var linkScale = 1; 
 var quantX = "free";
 var quantY = "free";
+
+var ROT_MAX = 1.0; 
 
 var winW = 1920; var winH = 1080;
 var curX = 0, curY = 0;
@@ -42,6 +46,7 @@ var liveSet = null;
 function window_size(w, h) { winW = w; winH = h; }
 function alt_key(state) { isAltDown = state; }
 function shift_key(state) { isShiftDown = state; }
+function o_key(state) { isODown = state; } // NEW: Catch 'o' key
 function set_link_scale(state) { linkScale = state; }
 function set_quant_x(v) { quantX = v; }
 function set_quant_y(v) { quantY = v; }
@@ -62,7 +67,6 @@ function snap(val, quant) {
     return Math.round(val * q) / q;
 }
 
-// True Euclidean wrapping (Fixes the downward wrap bug for negative values)
 function true_wrap(val, max) {
     var v = val - Math.floor(val / max) * max;
     if (v < 0.0) v += max;
@@ -75,7 +79,7 @@ function true_wrap(val, max) {
 function global_button(state) {
     if (state === 0 && prevBtn === 1) {
         if (isDraggingMarquee) release_selection();
-        if (isDraggingGroup || isScalingGroup || isRotatingGroup) release_group();
+        if (isDraggingGroup || isScalingGroup || isRotatingGroup || isAdjustingOpacityGroup) release_group();
         handledClick = false; 
         prevBtn = 0; 
     }
@@ -96,6 +100,7 @@ function picker_hit(target, state) {
                 isDraggingGroup = false;
                 isScalingGroup = false;
                 isRotatingGroup = false;
+                isAdjustingOpacityGroup = false;
                 got3DAnchor = false;
                 
                 a2x = (curX / winW) * 2.0 - 1.0;
@@ -122,20 +127,30 @@ function picker_hit(target, state) {
                     outlet(2, "selected", 1);
                 }
                 
-                if (isAltDown === 1) {
+                // NEW: Route interaction based on modifiers (Opacity takes precedence here)
+                if (isODown === 1) {
+                    isAdjustingOpacityGroup = true;
+                    isScalingGroup = false;
+                    isRotatingGroup = false;
+                    isDraggingGroup = false;
+                    isDraggingMarquee = false;
+                } else if (isAltDown === 1) {
                     isScalingGroup = true;
                     isRotatingGroup = false;
+                    isAdjustingOpacityGroup = false;
                     isDraggingGroup = false;
                     isDraggingMarquee = false;
                 } else if (isShiftDown === 1) {
                     isRotatingGroup = true;
                     isScalingGroup = false;
+                    isAdjustingOpacityGroup = false;
                     isDraggingGroup = false;
                     isDraggingMarquee = false;
                 } else {
                     isDraggingGroup = true;
                     isScalingGroup = false;
                     isRotatingGroup = false;
+                    isAdjustingOpacityGroup = false;
                     isDraggingMarquee = false;
                 }
                 got3DAnchor = false;
@@ -162,13 +177,13 @@ function screen_mouse(x, y, btn) {
             outlet(0, "framequad", a2x, a2y, 0.0, c2x, a2y, 0.0, c2x, c2y, 0.0, a2x, c2y, 0.0);
             outlet(1, "getposition");
             
-        } else if (isDraggingGroup || isScalingGroup || isRotatingGroup) {
+        } else if (isDraggingGroup || isScalingGroup || isRotatingGroup || isAdjustingOpacityGroup) {
             outlet(1, "getposition"); 
         }
     } 
     else if (btn === 0 && prevBtn === 1) {
         if (isDraggingMarquee) release_selection();
-        if (isDraggingGroup || isScalingGroup || isRotatingGroup) release_group();
+        if (isDraggingGroup || isScalingGroup || isRotatingGroup || isAdjustingOpacityGroup) release_group();
         handledClick = false; 
     }
     
@@ -176,7 +191,7 @@ function screen_mouse(x, y, btn) {
 }
 
 function picker_pos(x, y, z) {
-    if (!got3DAnchor && (isDraggingMarquee || isDraggingGroup || isScalingGroup || isRotatingGroup)) {
+    if (!got3DAnchor && (isDraggingMarquee || isDraggingGroup || isScalingGroup || isRotatingGroup || isAdjustingOpacityGroup)) {
         a3x = x; a3y = y;
         got3DAnchor = true; 
     } else if (got3DAnchor) {
@@ -184,6 +199,7 @@ function picker_pos(x, y, z) {
         if (isDraggingGroup) update_group_positions();
         else if (isScalingGroup) update_group_scale();
         else if (isRotatingGroup) update_group_rotation();
+        else if (isAdjustingOpacityGroup) update_group_opacity(); // NEW
     }
 }
 
@@ -209,6 +225,10 @@ function take_centroid_snapshot(registry) {
             registry.set(id + "::base_sy", registry.get(id + "::scale_y") || 1.0);
             registry.set(id + "::base_rot", registry.get(id + "::rotation") || 0.0);
             
+            // NEW: Capture base opacity (defaulting to 1.0 if not yet set)
+            var currentOpacity = registry.get(id + "::opacity");
+            registry.set(id + "::base_opacity", currentOpacity !== null ? parseFloat(currentOpacity) : 1.0);
+            
             if (bx < minX) minX = bx;
             if (bx > maxX) maxX = bx;
             if (by < minY) minY = by;
@@ -226,6 +246,7 @@ function release_group() {
     isDraggingGroup = false;
     isScalingGroup = false;
     isRotatingGroup = false;
+    isAdjustingOpacityGroup = false;
 }
 
 // =========================================================
@@ -333,7 +354,7 @@ function update_group_rotation() {
             var newX = groupCx + (dx * cosTheta) - (dy * sinTheta);
             var newY = groupCy + (dx * sinTheta) + (dy * cosTheta);
             
-            var newRot = true_wrap(brot + deltaRot, 1.0);
+            var newRot = true_wrap(brot + deltaRot, ROT_MAX);
             
             registry.set(id + "::x", newX);
             registry.set(id + "::y", newY);
@@ -346,6 +367,38 @@ function update_group_rotation() {
         }
     }
     draw_selections();
+}
+
+// NEW: Opacity Dragging
+function update_group_opacity() {
+    // We use vertical mouse movement for opacity
+    var deltaY = c3y - a3y;
+    
+    var registry = new Dict("SigneRegistry");
+    var keys = registry.getkeys();
+    if (keys == null) return;
+    if (typeof keys === "string") keys = [keys];
+    
+    for (var i = 0; i < keys.length; i++) {
+        var id = keys[i];
+        if (registry.get(id + "::selected") === 1) {
+            var bopac = parseFloat(registry.get(id + "::base_opacity")) || 1.0;
+            
+            // Add vertical delta (moving up increases opacity)
+            var newOpac = bopac + deltaY;
+            
+            // Clamp strictly between 0.0 and 1.0
+            if (newOpac > 1.0) newOpac = 1.0;
+            if (newOpac < 0.0) newOpac = 0.0;
+            
+            registry.set(id + "::opacity", newOpac);
+            
+            outlet(2, "send", id);
+            outlet(2, "opacity", newOpac);
+        }
+    }
+    // Note: We don't technically need to call draw_selections() here since 
+    // opacity doesn't change the wireframe size, but it's safe to keep consistent.
 }
 
 function release_selection() {
@@ -448,6 +501,14 @@ function ui_rotate(id, val) {
     outlet(2, "send", id);
     outlet(2, "rotation", val);
     draw_selections();
+}
+
+// NEW: UI interaction for Opacity
+function ui_opacity(id, val) {
+    var registry = new Dict("SigneRegistry");
+    registry.set(id + "::opacity", val);
+    outlet(2, "send", id);
+    outlet(2, "opacity", val);
 }
 
 function ui_count(id, val) {
@@ -570,7 +631,6 @@ function draw_selections() {
             if (count == null) count = 1; 
             var spacing = registry.get(id + "::spacing") || 0.0;
             
-            // Negate the radian to correctly draw CW as value goes up
             var rad = -rot * (Math.PI * 2.0);
             var cosT = Math.cos(rad);
             var sinT = Math.sin(rad);
