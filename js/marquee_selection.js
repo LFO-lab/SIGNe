@@ -426,12 +426,21 @@ function release_selection() {
         if (count == null) count = 1;
         var spacing = registry.get(id + "::spacing") || 0.0;
         
+        // Group Rotation for Hit Detection
+        var group_rot = registry.get(id + "::group_rot") || 0.0;
+        var groupRad = -group_rot * (Math.PI * 2.0);
+        var gCosT = Math.cos(groupRad);
+        var gSinT = Math.sin(groupRad);
+        
         var isSelected = 0;
         
         for (var j = 0; j < count; j++) {
-            var instanceX = objX + (j * spacing);
+            var dist = j * spacing;
+            var instanceX = objX + (dist * gCosT);
+            var instanceY = objY + (dist * gSinT);
+            
             var objMinX = instanceX - scaleX; var objMaxX = instanceX + scaleX;
-            var objMinY = objY - scaleY; var objMaxY = objY + scaleY;
+            var objMinY = instanceY - scaleY; var objMaxY = instanceY + scaleY;
             
             if (minX <= objMaxX && maxX >= objMinX && minY <= objMaxY && maxY >= objMinY) {
                 isSelected = 1;
@@ -527,6 +536,15 @@ function ui_spacing(id, val) {
     draw_selections();
 }
 
+// UI interaction for Group Rotation
+function ui_group_rot(id, val) {
+    var registry = new Dict("SigneRegistry");
+    registry.set(id + "::group_rot", val);
+    outlet(2, "send", id);
+    outlet(2, "group_rot", val);
+    draw_selections();
+}
+
 // =========================================================
 // CAMERA TRACKING & TRANSPORT
 // =========================================================
@@ -607,6 +625,9 @@ function move_transport_to_object(id) {
 // =========================================================
 // VISUAL FEEDBACK (3D SKETCH OUTLINES)
 // =========================================================
+// =========================================================
+// VISUAL FEEDBACK (3D SKETCH OUTLINES)
+// =========================================================
 function draw_selections() {
     var registry = new Dict("SigneRegistry");
     var keys = registry.getkeys();
@@ -631,7 +652,15 @@ function draw_selections() {
             if (count == null) count = 1; 
             var spacing = registry.get(id + "::spacing") || 0.0;
             
-            var rad = -rot * (Math.PI * 2.0);
+            // Group Rotation trajectory math
+            var group_rot = registry.get(id + "::group_rot") || 0.0;
+            var groupRad = -group_rot * (Math.PI * 2.0);
+            var gCosT = Math.cos(groupRad);
+            var gSinT = Math.sin(groupRad);
+            
+            // Add the group rot to the local rot so the boxes steer!
+            var totalRot = rot + group_rot;
+            var rad = -totalRot * (Math.PI * 2.0);
             var cosT = Math.cos(rad);
             var sinT = Math.sin(rad);
             
@@ -641,19 +670,22 @@ function draw_selections() {
             var bl_x = -sx, bl_y = -sy;
             
             for (var j = 0; j < count; j++) {
-                var instanceX = x + (j * spacing);
+                // Calculate position along the rotated line
+                var dist = j * spacing;
+                var instanceX = x + (dist * gCosT);
+                var instanceY = y + (dist * gSinT);
                 
                 var w_tl_x = instanceX + (tl_x * cosT - tl_y * sinT);
-                var w_tl_y = y + (tl_x * sinT + tl_y * cosT);
+                var w_tl_y = instanceY + (tl_x * sinT + tl_y * cosT);
                 
                 var w_tr_x = instanceX + (tr_x * cosT - tr_y * sinT);
-                var w_tr_y = y + (tr_x * sinT + tr_y * cosT);
+                var w_tr_y = instanceY + (tr_x * sinT + tr_y * cosT);
                 
                 var w_br_x = instanceX + (br_x * cosT - br_y * sinT);
-                var w_br_y = y + (br_x * sinT + br_y * cosT);
+                var w_br_y = instanceY + (br_x * sinT + br_y * cosT);
                 
                 var w_bl_x = instanceX + (bl_x * cosT - bl_y * sinT);
-                var w_bl_y = y + (bl_x * sinT + bl_y * cosT);
+                var w_bl_y = instanceY + (bl_x * sinT + bl_y * cosT);
                 
                 outlet(3, "glbegin", "line_loop");
                 outlet(3, "glvertex", w_tl_x, w_tl_y, 0.0);
