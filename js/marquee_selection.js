@@ -15,6 +15,7 @@ var isScrubbing = false;
 var handledClick = false; 
 var prevBtn = 0;
 var got3DAnchor = false;
+var lastViewportInteractionTime = 0; // FIXED: Renamed to cover all viewport actions
 
 var isAltDown = 0;
 var isShiftDown = 0;
@@ -22,6 +23,7 @@ var isODown = 0;
 var linkScale = 1; 
 var quantX = "free";
 var quantY = "free";
+var quantSpacing = "free";
 
 var ROT_MAX = 1.0; 
 
@@ -44,8 +46,9 @@ function alt_key(state) { isAltDown = state; }
 function shift_key(state) { isShiftDown = state; }
 function o_key(state) { isODown = state; } 
 function set_link_scale(state) { linkScale = state; }
-function set_quant_x(v) { quantX = v; }
+function set_quant_x(v) { quantX = v; quantSpacing = v; } 
 function set_quant_y(v) { quantY = v; }
+function set_quant_spacing(v) { quantSpacing = v; }
 
 function set_scrubbing(state) {
     isScrubbing = (state === 1);
@@ -83,65 +86,44 @@ function global_button(state) {
 
 function picker_hit(target, state) {
     if (isScrubbing) return;
-
     if (state === 1) { 
         if (!handledClick) {
             handledClick = true; 
+            lastViewportInteractionTime = new Date().getTime(); // Start timer on direct click
             target = target.replace(/_\d+$/, "");
             
             if (target === "BackgroundCollision") {
                 isDraggingMarquee = true;
-                isDraggingGroup = false;
-                isScalingGroup = false;
-                isRotatingGroup = false;
-                isAdjustingOpacityGroup = false;
+                isDraggingGroup = false; isScalingGroup = false; isRotatingGroup = false; isAdjustingOpacityGroup = false;
                 got3DAnchor = false;
-                
-                a2x = (curX / winW) * 2.0 - 1.0;
-                a2y = 1.0 - (curY / winH) * 2.0;
+                a2x = (curX / winW) * 2.0 - 1.0; a2y = 1.0 - (curY / winH) * 2.0;
                 outlet(1, "getposition");
-                
                 draw_selections();
             } else {
                 var registry = new Dict("SigneRegistry");
-                
-                // NEW: SAFETY GATE for clicks on unregistered objects
                 if (!registry.contains(target)) return;
-
+                
                 var isSelected = registry.get(target + "::selected");
                 
-                if (isSelected !== 1) {
+                if (isSelected != 1) {
                     var keys = registry.getkeys();
                     if (keys != null) {
                         if (typeof keys === "string") keys = [keys];
                         for (var i = 0; i < keys.length; i++) {
                             registry.set(keys[i] + "::selected", 0);
-                            outlet(2, "send", keys[i]);
-                            outlet(2, "selected", 0);
-                            outlet(2, "selected_via_mouse", 0); 
+                            outlet(2, "send", keys[i]); outlet(2, "selected", 0); outlet(2, "selected_via_mouse", 0); 
                         }
                     }
                     registry.set(target + "::selected", 1);
-                    outlet(2, "send", target);
-                    outlet(2, "selected", 1);
+                    outlet(2, "send", target); outlet(2, "selected", 1);
                 }
                 
-                outlet(2, "send", target);
-                outlet(2, "selected_via_mouse", 1);
+                outlet(2, "send", target); outlet(2, "selected_via_mouse", 1);
                 
-                if (isODown === 1) {
-                    isAdjustingOpacityGroup = true;
-                    isScalingGroup = false; isRotatingGroup = false; isDraggingGroup = false; isDraggingMarquee = false;
-                } else if (isAltDown === 1) {
-                    isScalingGroup = true;
-                    isRotatingGroup = false; isAdjustingOpacityGroup = false; isDraggingGroup = false; isDraggingMarquee = false;
-                } else if (isShiftDown === 1) {
-                    isRotatingGroup = true;
-                    isScalingGroup = false; isAdjustingOpacityGroup = false; isDraggingGroup = false; isDraggingMarquee = false;
-                } else {
-                    isDraggingGroup = true;
-                    isScalingGroup = false; isRotatingGroup = false; isAdjustingOpacityGroup = false; isDraggingMarquee = false;
-                }
+                if (isODown === 1) isAdjustingOpacityGroup = true;
+                else if (isAltDown === 1) isScalingGroup = true;
+                else if (isShiftDown === 1) isRotatingGroup = true;
+                else isDraggingGroup = true;
                 got3DAnchor = false;
                 take_centroid_snapshot(registry);
                 outlet(1, "getposition");
@@ -156,10 +138,8 @@ function screen_mouse(x, y, btn) {
     if (btn === 1 && prevBtn === 0) handledClick = false;
     if (btn === 1) {
         if (isDraggingMarquee && !isScrubbing) {
-            c2x = (x / winW) * 2.0 - 1.0;
-            c2y = 1.0 - (y / winH) * 2.0;
-            outlet(0, "reset");
-            outlet(0, "glcolor", 0.8, 0.8, 1.0, 1.0);
+            c2x = (x / winW) * 2.0 - 1.0; c2y = 1.0 - (y / winH) * 2.0;
+            outlet(0, "reset"); outlet(0, "glcolor", 0.8, 0.8, 1.0, 1.0);
             outlet(0, "framequad", a2x, a2y, 0.0, c2x, a2y, 0.0, c2x, c2y, 0.0, a2x, c2y, 0.0);
             outlet(1, "getposition");
         } else if (isDraggingGroup || isScalingGroup || isRotatingGroup || isAdjustingOpacityGroup) {
@@ -176,9 +156,7 @@ function screen_mouse(x, y, btn) {
 
 function picker_pos(x, y, z) {
     if (!got3DAnchor && (isDraggingMarquee || isDraggingGroup || isScalingGroup || isRotatingGroup || isAdjustingOpacityGroup)) {
-        a3x = x; a3y = y;
-        c3x = x; c3y = y; 
-        got3DAnchor = true; 
+        a3x = x; a3y = y; c3x = x; c3y = y; got3DAnchor = true; 
     } else if (got3DAnchor) {
         c3x = x; c3y = y;
         if (isDraggingGroup) update_group_positions();
@@ -192,32 +170,23 @@ function take_centroid_snapshot(registry) {
     var keys = registry.getkeys();
     if (keys == null) return;
     if (typeof keys === "string") keys = [keys];
-    var minX = Infinity, maxX = -Infinity;
-    var minY = Infinity, maxY = -Infinity;
-    var count = 0;
+    var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, count = 0;
     for (var i = 0; i < keys.length; i++) {
         var id = keys[i];
-        if (registry.get(id + "::selected") === 1) {
+        if (registry.get(id + "::selected") == 1) { 
             count++;
-            var bx = registry.get(id + "::x");
-            var by = registry.get(id + "::y");
-            registry.set(id + "::base_x", bx);
-            registry.set(id + "::base_y", by);
+            var bx = registry.get(id + "::x"), by = registry.get(id + "::y");
+            registry.set(id + "::base_x", bx); registry.set(id + "::base_y", by);
             registry.set(id + "::base_sx", registry.get(id + "::scale_x") || 1.0);
             registry.set(id + "::base_sy", registry.get(id + "::scale_y") || 1.0);
             registry.set(id + "::base_rot", registry.get(id + "::rotation") || 0.0);
             var currentOpacity = registry.get(id + "::opacity");
             registry.set(id + "::base_opacity", currentOpacity !== null ? parseFloat(currentOpacity) : 1.0);
-            if (bx < minX) minX = bx;
-            if (bx > maxX) maxX = bx;
-            if (by < minY) minY = by;
-            if (by > maxY) maxY = by;
+            if (bx < minX) minX = bx; if (bx > maxX) maxX = bx;
+            if (by < minY) minY = by; if (by > maxY) maxY = by;
         }
     }
-    if (count > 0) {
-        groupCx = (minX + maxX) / 2.0;
-        groupCy = (minY + maxY) / 2.0;
-    }
+    if (count > 0) { groupCx = (minX + maxX) / 2.0; groupCy = (minY + maxY) / 2.0; }
 }
 
 function release_group() {
@@ -225,7 +194,7 @@ function release_group() {
 }
 
 // =========================================================
-// TRANSFORM UPDATES (With Lock Gates)
+// TRANSFORM UPDATES (View-Origin)
 // =========================================================
 function update_group_positions() {
     var deltaX = c3x - a3x; var deltaY = c3y - a3y;
@@ -235,8 +204,8 @@ function update_group_positions() {
     if (typeof keys === "string") keys = [keys];
     for (var i = 0; i < keys.length; i++) {
         var id = keys[i];
-        if (registry.get(id + "::selected") === 1) {
-            if (registry.get(id + "::locked") === 1) continue;
+        if (registry.get(id + "::selected") == 1) { 
+            if (registry.get(id + "::locked") == 1) continue;
             var newX = snap(registry.get(id + "::base_x") + deltaX, quantX);
             var newY = snap(registry.get(id + "::base_y") + deltaY, quantY);
             registry.set(id + "::x", newX); registry.set(id + "::y", newY);
@@ -256,8 +225,8 @@ function update_group_scale() {
     if (typeof keys === "string") keys = [keys];
     for (var i = 0; i < keys.length; i++) {
         var id = keys[i];
-        if (registry.get(id + "::selected") === 1) {
-            if (registry.get(id + "::locked") === 1) continue;
+        if (registry.get(id + "::selected") == 1) { 
+            if (registry.get(id + "::locked") == 1) continue;
             var newX = groupCx + ((registry.get(id + "::base_x") - groupCx) * factorX);
             var newY = groupCy + ((registry.get(id + "::base_y") - groupCy) * factorY);
             var newSx = registry.get(id + "::base_sx") * factorX;
@@ -280,15 +249,12 @@ function update_group_rotation() {
     if (typeof keys === "string") keys = [keys];
     for (var i = 0; i < keys.length; i++) {
         var id = keys[i];
-        if (registry.get(id + "::selected") === 1) {
-            if (registry.get(id + "::locked") === 1) continue;
-            var dx = registry.get(id + "::base_x") - groupCx;
-            var dy = registry.get(id + "::base_y") - groupCy;
-            var newX = groupCx + (dx * cosTheta) - (dy * sinTheta);
-            var newY = groupCy + (dx * sinTheta) + (dy * cosTheta);
+        if (registry.get(id + "::selected") == 1) { 
+            if (registry.get(id + "::locked") == 1) continue;
+            var dx = registry.get(id + "::base_x") - groupCx, dy = registry.get(id + "::base_y") - groupCy;
+            var newX = groupCx + (dx * cosTheta) - (dy * sinTheta), newY = groupCy + (dx * sinTheta) + (dy * cosTheta);
             var newRot = true_wrap(registry.get(id + "::base_rot") + deltaRot, ROT_MAX);
-            registry.set(id + "::x", newX); registry.set(id + "::y", newY);
-            registry.set(id + "::rotation", newRot);
+            registry.set(id + "::x", newX); registry.set(id + "::y", newY); registry.set(id + "::rotation", newRot);
             outlet(2, "send", id); outlet(2, "move_x", newX); outlet(2, "move_y", newY); outlet(2, "rotation", newRot);
         }
     }
@@ -303,8 +269,8 @@ function update_group_opacity() {
     if (typeof keys === "string") keys = [keys];
     for (var i = 0; i < keys.length; i++) {
         var id = keys[i];
-        if (registry.get(id + "::selected") === 1) {
-            if (registry.get(id + "::locked") === 1) continue;
+        if (registry.get(id + "::selected") == 1) { 
+            if (registry.get(id + "::locked") == 1) continue;
             var newOpac = Math.max(0, Math.min(1, parseFloat(registry.get(id + "::base_opacity")) + deltaY));
             registry.set(id + "::opacity", newOpac);
             outlet(2, "send", id); outlet(2, "opacity", newOpac);
@@ -315,29 +281,25 @@ function update_group_opacity() {
 function release_selection() {
     if (isScrubbing) return; 
     isDraggingMarquee = false; outlet(0, "reset");
-    var minX = Math.min(a3x, c3x); var maxX = Math.max(a3x, c3x);
-    var minY = Math.min(a3y, c3y); var maxY = Math.max(a3y, c3y);
+    
+    lastViewportInteractionTime = new Date().getTime(); // FIXED: Start timer on marquee finish to block the echo loop!
+
+    var minX = Math.min(a3x, c3x), maxX = Math.max(a3x, c3x), minY = Math.min(a3y, c3y), maxY = Math.max(a3y, c3y);
     var registry = new Dict("SigneRegistry");
     var keys = registry.getkeys();
     if (keys == null) return;
     if (typeof keys === "string") keys = [keys];
     var leftmostID = null, leftmostX = Infinity;
-    
     for (var i = 0; i < keys.length; i++) {
-        var id = keys[i];
-        var isSelected = 0;
-        var objX = registry.get(id + "::x");
-        var objY = registry.get(id + "::y");
+        var id = keys[i], isSelected = 0, objX = registry.get(id + "::x"), objY = registry.get(id + "::y");
         var sx = registry.get(id + "::scale_x") || 0.0, sy = registry.get(id + "::scale_y") || 0.0;
         var count = registry.get(id + "::count") || 1, spacing = registry.get(id + "::spacing") || 0.0;
         var gRad = -(registry.get(id + "::group_rot") || 0.0) * (Math.PI * 2.0);
         var gCosT = Math.cos(gRad), gSinT = Math.sin(gRad);
-        
         for (var j = 0; j < count; j++) {
             var ix = objX + (j * spacing * gCosT), iy = objY + (j * spacing * gSinT);
             if (minX <= ix+sx && maxX >= ix-sx && minY <= iy+sy && maxY >= iy-sy) {
-                isSelected = 1;
-                if (objX < leftmostX) { leftmostX = objX; leftmostID = id; }
+                isSelected = 1; if (objX < leftmostX) { leftmostX = objX; leftmostID = id; }
                 break; 
             }
         }
@@ -352,7 +314,7 @@ function release_selection() {
 }
 
 // =========================================================
-// UI INTERACTIONS (With Registration Gates)
+// UI INTERACTIONS (UI-Origin: LOBOTOMIZED)
 // =========================================================
 function remove(id) {
     var registry = new Dict("SigneRegistry");
@@ -369,6 +331,10 @@ function ui_lock(id, state) {
 
 function ui_select(target) {
     if (isScrubbing) return;
+    
+    // Echo Killer: Ignores the Max patch trying to single-select a device if the user *just* used the viewport.
+    if (new Date().getTime() - lastViewportInteractionTime < 500) return;
+
     var registry = new Dict("SigneRegistry");
     if (!registry.contains(target)) return;
     var keys = registry.getkeys();
@@ -390,7 +356,6 @@ function ui_move_x(id, x) {
     if (!registry.contains(id)) return;
     var v = snap(x, quantX); registry.set(id + "::x", v);
     outlet(2, "send", id);
-    // outlet(2, "move_x", v);
     draw_selections();
 }
 
@@ -399,54 +364,67 @@ function ui_move_y(id, y) {
     if (!registry.contains(id)) return;
     var v = snap(y, quantY); registry.set(id + "::y", v);
     outlet(2, "send", id);
-    // outlet(2, "move_y", v);
     draw_selections();
 }
 
 function ui_scale_x(id, val) {
     var registry = new Dict("SigneRegistry");
     if (!registry.contains(id)) return;
-    registry.set(id + "::scale_x", val); outlet(2, "send", id); outlet(2, "scale_x", val);
-    if (linkScale === 1) { registry.set(id + "::scale_y", val); outlet(2, "send", id); outlet(2, "scale_y", val); }
+    registry.set(id + "::scale_x", val); outlet(2, "send", id); 
+    if (linkScale === 1) { 
+        registry.set(id + "::scale_y", val); 
+        outlet(2, "send", id); 
+    }
     draw_selections();
 }
 
 function ui_scale_y(id, val) {
     var registry = new Dict("SigneRegistry");
     if (!registry.contains(id)) return;
-    registry.set(id + "::scale_y", val); outlet(2, "send", id); outlet(2, "scale_y", val);
-    if (linkScale === 1) { registry.set(id + "::scale_x", val); outlet(2, "send", id); outlet(2, "scale_x", val); }
+    registry.set(id + "::scale_y", val); outlet(2, "send", id); 
+    if (linkScale === 1) { 
+        registry.set(id + "::scale_x", val); 
+        outlet(2, "send", id); 
+    }
     draw_selections();
 }
 
 function ui_rotate(id, val) {
     var registry = new Dict("SigneRegistry");
     if (!registry.contains(id)) return;
-    registry.set(id + "::rotation", val); outlet(2, "send", id); outlet(2, "rotation", val); draw_selections();
+    registry.set(id + "::rotation", val); 
+    outlet(2, "send", id); 
+    draw_selections();
 }
 
 function ui_opacity(id, val) {
     var registry = new Dict("SigneRegistry");
     if (!registry.contains(id)) return;
-    registry.set(id + "::opacity", val); outlet(2, "send", id); outlet(2, "opacity", val);
+    registry.set(id + "::opacity", val); 
+    outlet(2, "send", id); 
 }
 
 function ui_count(id, val) {
     var registry = new Dict("SigneRegistry");
     if (!registry.contains(id)) return;
-    registry.set(id + "::count", val); outlet(2, "send", id); outlet(2, "count", val); draw_selections();
+    registry.set(id + "::count", val); outlet(2, "send", id); 
+    draw_selections();
 }
 
 function ui_spacing(id, val) {
     var registry = new Dict("SigneRegistry");
     if (!registry.contains(id)) return;
-    registry.set(id + "::spacing", val); outlet(2, "send", id); outlet(2, "spacing", val); draw_selections();
+    var v = snap(val, quantSpacing);
+    registry.set(id + "::spacing", v); 
+    outlet(2, "send", id); 
+    draw_selections();
 }
 
 function ui_group_rot(id, val) {
     var registry = new Dict("SigneRegistry");
     if (!registry.contains(id)) return;
-    registry.set(id + "::group_rot", val); outlet(2, "send", id); outlet(2, "group_rot", val); draw_selections();
+    registry.set(id + "::group_rot", val); outlet(2, "send", id); 
+    draw_selections();
 }
 
 // =========================================================
@@ -459,7 +437,7 @@ function set_pinned(id, state) {
 
 function camera_pos(cx, cy) {
     if (!camInitialized) { lastCamX = cx; lastCamY = cy; camInitialized = true; return; }
-    var dCx = cx - lastCamX; var dCy = cy - lastCamY;
+    var dCx = cx - lastCamX, dCy = cy - lastCamY;
     if (dCx !== 0 || dCy !== 0) {
         var registry = new Dict("SigneRegistry");
         var keys = registry.getkeys();
@@ -467,7 +445,7 @@ function camera_pos(cx, cy) {
             if (typeof keys === "string") keys = [keys];
             for (var i = 0; i < keys.length; i++) {
                 var id = keys[i];
-                if (registry.get(id + "::pinned") === 1) {
+                if (registry.get(id + "::pinned") == 1) { 
                     var nx = registry.get(id+"::x") + dCx, ny = registry.get(id+"::y") + dCy;
                     registry.set(id+"::x", nx); registry.set(id+"::y", ny);
                     outlet(2, "send", id); outlet(2, "move_x", nx); outlet(2, "move_y", ny);
@@ -505,8 +483,8 @@ function draw_selections() {
     if (typeof keys === "string") keys = [keys];
     for (var i = 0; i < keys.length; i++) {
         var id = keys[i];
-        if (registry.get(id + "::selected") === 1) {
-            outlet(3, "glcolor", (registry.get(id + "::locked") === 1) ? [0.2, 0.6, 1.0, 1.0] : [1.0, 0.8, 0.0, 1.0]);
+        if (registry.get(id + "::selected") == 1) { 
+            outlet(3, "glcolor", (registry.get(id + "::locked") == 1) ? [0.2, 0.6, 1.0, 1.0] : [1.0, 0.8, 0.0, 1.0]);
             var x = registry.get(id+"::x"), y = registry.get(id+"::y");
             var sx = registry.get(id+"::scale_x") || 0.0, sy = registry.get(id+"::scale_y") || 0.0;
             var rot = registry.get(id+"::rotation") || 0.0, gRot = registry.get(id+"::group_rot") || 0.0;
@@ -522,6 +500,58 @@ function draw_selections() {
                 outlet(3, "glvertex", ix + (-sx*cosT + sy*sinT), iy + (-sx*sinT - sy*cosT), 0);
                 outlet(3, "glend");
             }
+        }
+    }
+}
+
+// =========================================================
+// GROUP PROPERTY DISTRIBUTION (From Properties Window)
+// =========================================================
+
+// For single values (Saturation, Interpolation, etc.)
+function group_prop_float(propName, val) {
+    var registry = new Dict("SigneRegistry");
+    var keys = registry.getkeys();
+    if (keys == null) return;
+    if (typeof keys === "string") keys = [keys];
+    for (var i = 0; i < keys.length; i++) {
+        var id = keys[i];
+        if (registry.get(id + "::selected") == 1) {
+            registry.set(id + "::" + propName, val);
+            outlet(2, "send", id);
+            outlet(2, propName, val);
+        }
+    }
+}
+
+// For 3-part RGB lists (Start Color, End Color)
+function group_prop_rgb(propName, r, g, b) {
+    var registry = new Dict("SigneRegistry");
+    var keys = registry.getkeys();
+    if (keys == null) return;
+    if (typeof keys === "string") keys = [keys];
+    for (var i = 0; i < keys.length; i++) {
+        var id = keys[i];
+        if (registry.get(id + "::selected") == 1) {
+            registry.set(id + "::" + propName, [r, g, b]); // Stored as array
+            outlet(2, "send", id);
+            outlet(2, propName, r, g, b);
+        }
+    }
+}
+
+// For text/list variables (Texture Filenames)
+function group_prop_symbol(propName, sym) {
+    var registry = new Dict("SigneRegistry");
+    var keys = registry.getkeys();
+    if (keys == null) return;
+    if (typeof keys === "string") keys = [keys];
+    for (var i = 0; i < keys.length; i++) {
+        var id = keys[i];
+        if (registry.get(id + "::selected") == 1) {
+            registry.set(id + "::" + propName, sym);
+            outlet(2, "send", id);
+            outlet(2, propName, sym);
         }
     }
 }
