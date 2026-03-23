@@ -292,7 +292,10 @@ function release_selection() {
     var leftmostID = null, leftmostX = Infinity;
     for (var i = 0; i < keys.length; i++) {
         var id = keys[i], isSelected = 0, objX = registry.get(id + "::x"), objY = registry.get(id + "::y");
-        var sx = registry.get(id + "::scale_x") || 0.0, sy = registry.get(id + "::scale_y") || 0.0;
+		var sx = registry.get(id + "::bounds_x");
+        if (sx == null) sx = registry.get(id + "::scale_x") || 0.0;
+        var sy = registry.get(id + "::bounds_y");
+        if (sy == null) sy = registry.get(id + "::scale_y") || 0.0;
         var count = registry.get(id + "::count") || 1, spacing = registry.get(id + "::spacing") || 0.0;
         var gRad = -(registry.get(id + "::group_rot") || 0.0) * (Math.PI * 2.0);
         var gCosT = Math.cos(gRad), gSinT = Math.sin(gRad);
@@ -427,6 +430,20 @@ function ui_group_rot(id, val) {
     draw_selections();
 }
 
+function ui_bounds_x(id, val) {
+    var registry = new Dict("SigneRegistry");
+    if (!registry.contains(id)) return;
+    registry.set(id + "::bounds_x", val);
+    draw_selections();
+}
+
+function ui_bounds_y(id, val) {
+    var registry = new Dict("SigneRegistry");
+    if (!registry.contains(id)) return;
+    registry.set(id + "::bounds_y", val);
+    draw_selections();
+}
+
 // =========================================================
 // CAMERA TRACKING & TRANSPORT
 // =========================================================
@@ -459,7 +476,16 @@ function camera_pos(cx, cy) {
 
 function move_to_transport(id) {
     if (!liveSet) liveSet = new LiveAPI(null, "live_set");
-    var v = snap(liveSet.get("current_song_time")[0], quantX);
+    
+    // Mathematically perfect Time Signature conversion (works for 4/4, 6/8, 7/8, etc.)
+    var num = parseFloat(liveSet.get("signature_numerator")[0]);
+    var den = parseFloat(liveSet.get("signature_denominator")[0]);
+    var beatsPerBar = (num / den) * 4.0; 
+    
+    var beats = parseFloat(liveSet.get("current_song_time")[0]);
+    var bars = beats / beatsPerBar; 
+    
+    var v = snap(bars, quantX);
     var registry = new Dict("SigneRegistry");
     if (!registry.contains(id)) return;
     registry.set(id + "::x", v);
@@ -469,7 +495,17 @@ function move_to_transport(id) {
 function move_transport_to_object(id) {
     if (!liveSet) liveSet = new LiveAPI(null, "live_set");
     var registry = new Dict("SigneRegistry");
-    if (registry.contains(id)) liveSet.set("current_song_time", registry.get(id + "::x"));
+    if (registry.contains(id)) {
+        var num = parseFloat(liveSet.get("signature_numerator")[0]);
+        var den = parseFloat(liveSet.get("signature_denominator")[0]);
+        var beatsPerBar = (num / den) * 4.0;
+        
+        var bars = parseFloat(registry.get(id + "::x"));
+        var beats = bars * beatsPerBar;
+        
+        // Explicitly cast to a clean Number to prevent API type-rejection
+        liveSet.set("current_song_time", Number(beats));
+    }
 }
 
 // =========================================================
@@ -486,8 +522,10 @@ function draw_selections() {
         if (registry.get(id + "::selected") == 1) { 
             outlet(3, "glcolor", (registry.get(id + "::locked") == 1) ? [0.2, 0.6, 1.0, 1.0] : [1.0, 0.8, 0.0, 1.0]);
             var x = registry.get(id+"::x"), y = registry.get(id+"::y");
-            var sx = registry.get(id+"::scale_x") || 0.0, sy = registry.get(id+"::scale_y") || 0.0;
-            var rot = registry.get(id+"::rotation") || 0.0, gRot = registry.get(id+"::group_rot") || 0.0;
+			var sx = registry.get(id + "::bounds_x");
+            if (sx == null) sx = registry.get(id + "::scale_x") || 0.0;
+            var sy = registry.get(id + "::bounds_y");
+            if (sy == null) sy = registry.get(id + "::scale_y") || 0.0;            var rot = registry.get(id+"::rotation") || 0.0, gRot = registry.get(id+"::group_rot") || 0.0;
             var count = registry.get(id+"::count") || 1, spacing = registry.get(id+"::spacing") || 0.0;
             var gCos = Math.cos(-gRot * 2 * Math.PI), gSin = Math.sin(-gRot * 2 * Math.PI);
             var cosT = Math.cos(-(rot+gRot) * 2 * Math.PI), sinT = Math.sin(-(rot+gRot) * 2 * Math.PI);
