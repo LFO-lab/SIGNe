@@ -6,6 +6,9 @@ outlets = 4;
 // =========================================================
 // STATE VARIABLES & SETTINGS
 // =========================================================
+var ignoreX = false;
+var ignoreY = false;
+
 var isDraggingMarquee = false;
 var isDraggingGroup = false;
 var isScalingGroup = false;
@@ -15,12 +18,14 @@ var isScrubbing = false;
 var handledClick = false; 
 var prevBtn = 0;
 var got3DAnchor = false;
-var lastViewportInteractionTime = 0; // FIXED: Renamed to cover all viewport actions
+var lastViewportInteractionTime = 0; 
 
 var isAltDown = 0;
 var isShiftDown = 0;
 var isODown = 0; 
 var linkScale = 1; 
+var activeRatio = 1.0; // NEW: Tracks the exact proportion of the selected object
+
 var quantX = "free";
 var quantY = "free";
 var quantSpacing = "free";
@@ -45,10 +50,30 @@ function window_size(w, h) { winW = w; winH = h; }
 function alt_key(state) { isAltDown = state; }
 function shift_key(state) { isShiftDown = state; }
 function o_key(state) { isODown = state; } 
-function set_link_scale(state) { linkScale = state; }
 function set_quant_x(v) { quantX = v; quantSpacing = v; } 
 function set_quant_y(v) { quantY = v; }
 function set_quant_spacing(v) { quantSpacing = v; }
+
+function set_link_scale(state) { 
+    linkScale = state; 
+    
+    // NEW: Capture the ratio of the currently selected object when turning Link ON
+    if (linkScale === 1) {
+        var registry = new Dict("SigneRegistry");
+        var keys = registry.getkeys();
+        if (keys != null) {
+            if (typeof keys === "string") keys = [keys];
+            for (var i = 0; i < keys.length; i++) {
+                if (registry.get(keys[i] + "::selected") == 1) {
+                    var x = registry.get(keys[i] + "::scale_x") || 1.0;
+                    var y = registry.get(keys[i] + "::scale_y") || 1.0;
+                    activeRatio = (x !== 0) ? (y / x) : 1.0;
+                    break;
+                }
+            }
+        }
+    }
+}
 
 function set_scrubbing(state) {
     isScrubbing = (state === 1);
@@ -89,7 +114,7 @@ function picker_hit(target, state) {
     if (state === 1) { 
         if (!handledClick) {
             handledClick = true; 
-            lastViewportInteractionTime = new Date().getTime(); // Start timer on direct click
+            lastViewportInteractionTime = new Date().getTime(); 
             target = target.replace(/_\d+$/, "");
             
             if (target === "BackgroundCollision") {
@@ -116,6 +141,13 @@ function picker_hit(target, state) {
                     }
                     registry.set(target + "::selected", 1);
                     outlet(2, "send", target); outlet(2, "selected", 1);
+
+                    // NEW: Update ratio for newly clicked object
+                    if (linkScale === 1) {
+                        var x = registry.get(target + "::scale_x") || 1.0;
+                        var y = registry.get(target + "::scale_y") || 1.0;
+                        activeRatio = (x !== 0) ? (y / x) : 1.0;
+                    }
                 }
                 
                 outlet(2, "send", target); outlet(2, "selected_via_mouse", 1);
@@ -223,6 +255,7 @@ function update_group_scale() {
     var keys = registry.getkeys();
     if (keys == null) return;
     if (typeof keys === "string") keys = [keys];
+    
     for (var i = 0; i < keys.length; i++) {
         var id = keys[i];
         if (registry.get(id + "::selected") == 1) { 
@@ -231,10 +264,19 @@ function update_group_scale() {
             var newY = groupCy + ((registry.get(id + "::base_y") - groupCy) * factorY);
             var newSx = registry.get(id + "::base_sx") * factorX;
             var newSy = registry.get(id + "::base_sy") * factorY;
+            
             registry.set(id + "::x", newX); registry.set(id + "::y", newY);
             registry.set(id + "::scale_x", newSx); registry.set(id + "::scale_y", newSy);
-            outlet(2, "send", id); outlet(2, "move_x", newX); outlet(2, "move_y", newY);
-            outlet(2, "scale_x", newSx); outlet(2, "scale_y", newSy);
+            
+            outlet(2, "send", id); 
+            outlet(2, "move_x", newX); outlet(2, "move_y", newY);
+            
+            // 1. Update Physics Engine
+            outlet(2, "scale_x", newSx); outlet(2, "scale_y", newSy);    
+            
+            // 2. Viewport drag means the mouse isn't holding ANY dial, so update both UIs!
+            outlet(2, "ui_x", newSx); 
+            outlet(2, "ui_y", newSy);
         }
     }
     draw_selections();
@@ -282,7 +324,7 @@ function release_selection() {
     if (isScrubbing) return; 
     isDraggingMarquee = false; outlet(0, "reset");
     
-    lastViewportInteractionTime = new Date().getTime(); // FIXED: Start timer on marquee finish to block the echo loop!
+    lastViewportInteractionTime = new Date().getTime(); 
 
     var minX = Math.min(a3x, c3x), maxX = Math.max(a3x, c3x), minY = Math.min(a3y, c3y), maxY = Math.max(a3y, c3y);
     var registry = new Dict("SigneRegistry");
@@ -317,7 +359,7 @@ function release_selection() {
 }
 
 // =========================================================
-// UI INTERACTIONS (UI-Origin: LOBOTOMIZED)
+// UI INTERACTIONS 
 // =========================================================
 function remove(id) {
     var registry = new Dict("SigneRegistry");
@@ -334,8 +376,6 @@ function ui_lock(id, state) {
 
 function ui_select(target) {
     if (isScrubbing) return;
-    
-    // Echo Killer: Ignores the Max patch trying to single-select a device if the user *just* used the viewport.
     if (new Date().getTime() - lastViewportInteractionTime < 500) return;
 
     var registry = new Dict("SigneRegistry");
@@ -351,6 +391,14 @@ function ui_select(target) {
     registry.set(target + "::selected", 1);
     outlet(2, "send", target); outlet(2, "selected", 1);
     take_centroid_snapshot(registry);
+
+    // NEW: Update ratio for newly selected object
+    if (linkScale === 1) {
+        var x = registry.get(target + "::scale_x") || 1.0;
+        var y = registry.get(target + "::scale_y") || 1.0;
+        activeRatio = (x !== 0) ? (y / x) : 1.0;
+    }
+
     draw_selections();
 }
 
@@ -370,27 +418,77 @@ function ui_move_y(id, y) {
     draw_selections();
 }
 
+function dial_scale_x(id, val, isHuman) {
+    if (isScalingGroup || ignoreX) return; 
+
+    var registry = new Dict("SigneRegistry");
+    if (!registry.contains(id)) return;
+
+    registry.set(id + "::scale_x", val);
+    outlet(2, "send", id); 
+    
+    // 1. ALWAYS update the physics engine
+    outlet(2, "scale_x", val); 
+    // Notice we do NOT send "ui_x" here! Dial X is already correct.
+
+    var humanInteraction = (isHuman !== undefined) ? isHuman : 1;
+
+    if (linkScale === 1 && humanInteraction === 1) {
+        var newY = val * activeRatio;
+        registry.set(id + "::scale_y", newY);
+        
+        ignoreY = true;
+        // 2. Update Y Physics
+        outlet(2, "scale_y", newY); 
+        // 3. Update Y UI (This triggers the linked dial visually and records it!)
+        outlet(2, "ui_y", newY);    
+        ignoreY = false;
+    }
+    draw_selections();
+}
+
+function dial_scale_y(id, val, isHuman) {
+    if (isScalingGroup || ignoreY) return; 
+
+    var registry = new Dict("SigneRegistry");
+    if (!registry.contains(id)) return;
+
+    registry.set(id + "::scale_y", val);
+    outlet(2, "send", id); 
+    outlet(2, "scale_y", val); 
+
+    var humanInteraction = (isHuman !== undefined) ? isHuman : 1;
+
+    if (linkScale === 1 && humanInteraction === 1) {
+        var newX = (activeRatio !== 0) ? (val / activeRatio) : val;
+        registry.set(id + "::scale_x", newX);
+        
+        ignoreX = true;
+        outlet(2, "scale_x", newX); 
+        outlet(2, "ui_x", newX);    
+        ignoreX = false;
+    }
+    draw_selections();
+}
+
+// --- SAFE AUTOMATION FUNCTIONS ---
+// Lobotomized: These strictly pass data to the registry so automation playbacks perfectly.
 function ui_scale_x(id, val) {
     var registry = new Dict("SigneRegistry");
     if (!registry.contains(id)) return;
-    registry.set(id + "::scale_x", val); outlet(2, "send", id); 
-    if (linkScale === 1) { 
-        registry.set(id + "::scale_y", val); 
-        outlet(2, "send", id); 
-    }
+    registry.set(id + "::scale_x", val); 
+    outlet(2, "send", id); 
     draw_selections();
 }
 
 function ui_scale_y(id, val) {
     var registry = new Dict("SigneRegistry");
     if (!registry.contains(id)) return;
-    registry.set(id + "::scale_y", val); outlet(2, "send", id); 
-    if (linkScale === 1) { 
-        registry.set(id + "::scale_x", val); 
-        outlet(2, "send", id); 
-    }
+    registry.set(id + "::scale_y", val); 
+    outlet(2, "send", id); 
     draw_selections();
 }
+// ---------------------------------
 
 function ui_rotate(id, val) {
     var registry = new Dict("SigneRegistry");
@@ -476,12 +574,9 @@ function camera_pos(cx, cy) {
 
 function move_to_transport(id) {
     if (!liveSet) liveSet = new LiveAPI(null, "live_set");
-    
-    // Mathematically perfect Time Signature conversion (works for 4/4, 6/8, 7/8, etc.)
     var num = parseFloat(liveSet.get("signature_numerator")[0]);
     var den = parseFloat(liveSet.get("signature_denominator")[0]);
     var beatsPerBar = (num / den) * 4.0; 
-    
     var beats = parseFloat(liveSet.get("current_song_time")[0]);
     var bars = beats / beatsPerBar; 
     
@@ -499,11 +594,8 @@ function move_transport_to_object(id) {
         var num = parseFloat(liveSet.get("signature_numerator")[0]);
         var den = parseFloat(liveSet.get("signature_denominator")[0]);
         var beatsPerBar = (num / den) * 4.0;
-        
         var bars = parseFloat(registry.get(id + "::x"));
         var beats = bars * beatsPerBar;
-        
-        // Explicitly cast to a clean Number to prevent API type-rejection
         liveSet.set("current_song_time", Number(beats));
     }
 }
@@ -545,8 +637,6 @@ function draw_selections() {
 // =========================================================
 // GROUP PROPERTY DISTRIBUTION (From Properties Window)
 // =========================================================
-
-// For single values (Saturation, Interpolation, etc.)
 function group_prop_float(propName, val) {
     var registry = new Dict("SigneRegistry");
     var keys = registry.getkeys();
@@ -562,7 +652,6 @@ function group_prop_float(propName, val) {
     }
 }
 
-// For 3-part RGB lists (Start Color, End Color)
 function group_prop_rgb(propName, r, g, b) {
     var registry = new Dict("SigneRegistry");
     var keys = registry.getkeys();
@@ -571,14 +660,13 @@ function group_prop_rgb(propName, r, g, b) {
     for (var i = 0; i < keys.length; i++) {
         var id = keys[i];
         if (registry.get(id + "::selected") == 1) {
-            registry.set(id + "::" + propName, [r, g, b]); // Stored as array
+            registry.set(id + "::" + propName, [r, g, b]); 
             outlet(2, "send", id);
             outlet(2, propName, r, g, b);
         }
     }
 }
 
-// For text/list variables (Texture Filenames)
 function group_prop_symbol(propName, sym) {
     var registry = new Dict("SigneRegistry");
     var keys = registry.getkeys();
