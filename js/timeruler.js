@@ -27,7 +27,7 @@ function init_pool() {
         t.depth_enable = 0;
         t.layer = 100;
         t.transform_reset = 2;
-        t.align = 2; 
+        t.align = 0; 
         t.mode = "3d"; 
         t.color = textColor;
         
@@ -88,6 +88,10 @@ function bang() {
     
     var correctedXScale = textBaseScale / aspectRatio;
     var voiceIndex = 0;
+    
+    // Nudge value to push the text to the right of the grid line
+    // (0.015 represents roughly 0.75% of the screen width)
+    var textNudgeX = 0.004; 
 
     for (var i = startBar; i <= endBar; i++) {
         if (voiceIndex >= poolSize) break; 
@@ -110,7 +114,8 @@ function bang() {
         }
 
         textPool[voiceIndex].text(txt.toString()); 
-        textPool[voiceIndex].position = [glX, yOffset, 0.0];
+        // Add the nudge to the X position
+        textPool[voiceIndex].position = [glX + textNudgeX, yOffset, 0.0];
         textPool[voiceIndex].scale = [correctedXScale, textBaseScale, textBaseScale];
         textPool[voiceIndex].color = textColor; 
         textPool[voiceIndex].enable = 1;
