@@ -24,11 +24,15 @@ var isAltDown = 0;
 var isShiftDown = 0;
 var isODown = 0; 
 var linkScale = 1; 
-var activeRatio = 1.0; // NEW: Tracks the exact proportion of the selected object
+var activeRatio = 1.0; 
 
 var quantX = "free";
 var quantY = "free";
 var quantSpacing = "free";
+
+// NEW: Independent tracking for X and Y human interaction
+var isHumanX = 1; 
+var isHumanY = 1; 
 
 var ROT_MAX = 1.0; 
 
@@ -54,10 +58,13 @@ function set_quant_x(v) { quantX = v; quantSpacing = v; }
 function set_quant_y(v) { quantY = v; }
 function set_quant_spacing(v) { quantSpacing = v; }
 
+// NEW: Catch independent playback states from the auto_gate.js logic
+function is_human_x(v) { isHumanX = v; }
+function is_human_y(v) { isHumanY = v; }
+
 function set_link_scale(state) { 
     linkScale = state; 
     
-    // NEW: Capture the ratio of the currently selected object when turning Link ON
     if (linkScale === 1) {
         var registry = new Dict("SigneRegistry");
         var keys = registry.getkeys();
@@ -142,7 +149,6 @@ function picker_hit(target, state) {
                     registry.set(target + "::selected", 1);
                     outlet(2, "send", target); outlet(2, "selected", 1);
 
-                    // NEW: Update ratio for newly clicked object
                     if (linkScale === 1) {
                         var x = registry.get(target + "::scale_x") || 1.0;
                         var y = registry.get(target + "::scale_y") || 1.0;
@@ -238,6 +244,7 @@ function update_group_positions() {
         var id = keys[i];
         if (registry.get(id + "::selected") == 1) { 
             if (registry.get(id + "::locked") == 1) continue;
+            // Viewport drag is always a human interaction, snap applies normally
             var newX = snap(registry.get(id + "::base_x") + deltaX, quantX);
             var newY = snap(registry.get(id + "::base_y") + deltaY, quantY);
             registry.set(id + "::x", newX); registry.set(id + "::y", newY);
@@ -271,12 +278,8 @@ function update_group_scale() {
             outlet(2, "send", id); 
             outlet(2, "move_x", newX); outlet(2, "move_y", newY);
             
-            // 1. Update Physics Engine
             outlet(2, "scale_x", newSx); outlet(2, "scale_y", newSy);    
-            
-            // 2. Viewport drag means the mouse isn't holding ANY dial, so update both UIs!
-            outlet(2, "ui_x", newSx); 
-            outlet(2, "ui_y", newSy);
+            outlet(2, "ui_x", newSx); outlet(2, "ui_y", newSy);
         }
     }
     draw_selections();
@@ -392,7 +395,6 @@ function ui_select(target) {
     outlet(2, "send", target); outlet(2, "selected", 1);
     take_centroid_snapshot(registry);
 
-    // NEW: Update ratio for newly selected object
     if (linkScale === 1) {
         var x = registry.get(target + "::scale_x") || 1.0;
         var y = registry.get(target + "::scale_y") || 1.0;
@@ -402,18 +404,22 @@ function ui_select(target) {
     draw_selections();
 }
 
+// NEW: Only snap if a human is driving the X dial
 function ui_move_x(id, x) {
     var registry = new Dict("SigneRegistry");
     if (!registry.contains(id)) return;
-    var v = snap(x, quantX); registry.set(id + "::x", v);
+    var v = (isHumanX === 1) ? snap(x, quantX) : x; 
+    registry.set(id + "::x", v);
     outlet(2, "send", id);
     draw_selections();
 }
 
+// NEW: Only snap if a human is driving the Y dial
 function ui_move_y(id, y) {
     var registry = new Dict("SigneRegistry");
     if (!registry.contains(id)) return;
-    var v = snap(y, quantY); registry.set(id + "::y", v);
+    var v = (isHumanY === 1) ? snap(y, quantY) : y; 
+    registry.set(id + "::y", v);
     outlet(2, "send", id);
     draw_selections();
 }
@@ -427,9 +433,7 @@ function dial_scale_x(id, val, isHuman) {
     registry.set(id + "::scale_x", val);
     outlet(2, "send", id); 
     
-    // 1. ALWAYS update the physics engine
     outlet(2, "scale_x", val); 
-    // Notice we do NOT send "ui_x" here! Dial X is already correct.
 
     var humanInteraction = (isHuman !== undefined) ? isHuman : 1;
 
@@ -438,9 +442,7 @@ function dial_scale_x(id, val, isHuman) {
         registry.set(id + "::scale_y", newY);
         
         ignoreY = true;
-        // 2. Update Y Physics
         outlet(2, "scale_y", newY); 
-        // 3. Update Y UI (This triggers the linked dial visually and records it!)
         outlet(2, "ui_y", newY);    
         ignoreY = false;
     }
@@ -471,8 +473,6 @@ function dial_scale_y(id, val, isHuman) {
     draw_selections();
 }
 
-// --- SAFE AUTOMATION FUNCTIONS ---
-// Lobotomized: These strictly pass data to the registry so automation playbacks perfectly.
 function ui_scale_x(id, val) {
     var registry = new Dict("SigneRegistry");
     if (!registry.contains(id)) return;
@@ -488,7 +488,6 @@ function ui_scale_y(id, val) {
     outlet(2, "send", id); 
     draw_selections();
 }
-// ---------------------------------
 
 function ui_rotate(id, val) {
     var registry = new Dict("SigneRegistry");
