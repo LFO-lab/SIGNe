@@ -50,7 +50,6 @@ function bang() {
             if (rState) isRecording = rState[0];
             
             updateState();
-            post("SUCCESS: Smart Gate locked to [" + targetName + "]\n");
             return;
         }
     }
