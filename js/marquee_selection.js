@@ -30,9 +30,11 @@ var quantX = "free";
 var quantY = "free";
 var quantSpacing = "free";
 
-// NEW: Independent tracking for X and Y human interaction
 var isHumanX = 1; 
 var isHumanY = 1; 
+
+// NEW: 0 = Snap Center, 1 = Snap Trigger
+var snapToTrigger = 1; 
 
 var ROT_MAX = 1.0; 
 
@@ -58,13 +60,14 @@ function set_quant_x(v) { quantX = v; quantSpacing = v; }
 function set_quant_y(v) { quantY = v; }
 function set_quant_spacing(v) { quantSpacing = v; }
 
-// NEW: Catch independent playback states from the auto_gate.js logic
 function is_human_x(v) { isHumanX = v; }
 function is_human_y(v) { isHumanY = v; }
 
+// NEW: Receive the Snap Mode toggle
+function set_snap_mode(v) { snapToTrigger = v; }
+
 function set_link_scale(state) { 
     linkScale = state; 
-    
     if (linkScale === 1) {
         var registry = new Dict("SigneRegistry");
         var keys = registry.getkeys();
@@ -244,8 +247,20 @@ function update_group_positions() {
         var id = keys[i];
         if (registry.get(id + "::selected") == 1) { 
             if (registry.get(id + "::locked") == 1) continue;
-            // Viewport drag is always a human interaction, snap applies normally
-            var newX = snap(registry.get(id + "::base_x") + deltaX, quantX);
+            
+            var bx = registry.get(id + "::base_x");
+            var newX;
+            
+            // NEW: Snap the Trigger Offset line if active!
+            if (snapToTrigger === 1) {
+                var tOff = registry.get(id + "::trigger_offset") || 0.0;
+                var rawTriggerPos = bx + tOff + deltaX;
+                var snappedTriggerPos = snap(rawTriggerPos, quantX);
+                newX = snappedTriggerPos - tOff;
+            } else {
+                newX = snap(bx + deltaX, quantX);
+            }
+            
             var newY = snap(registry.get(id + "::base_y") + deltaY, quantY);
             registry.set(id + "::x", newX); registry.set(id + "::y", newY);
             outlet(2, "send", id); outlet(2, "move_x", newX); outlet(2, "move_y", newY);
@@ -404,23 +419,41 @@ function ui_select(target) {
     draw_selections();
 }
 
-// NEW: Only snap if a human is driving the X dial
+// NEW: Dynamically shift the coordinate to snap the trigger instead of the center
 function ui_move_x(id, x) {
     var registry = new Dict("SigneRegistry");
     if (!registry.contains(id)) return;
-    var v = (isHumanX === 1) ? snap(x, quantX) : x; 
-    registry.set(id + "::x", v);
+    
+    var newX = x;
+    if (isHumanX === 1) {
+        if (snapToTrigger === 1) {
+            var tOff = registry.get(id + "::trigger_offset") || 0.0;
+            var snappedTriggerPos = snap(x + tOff, quantX);
+            newX = snappedTriggerPos - tOff;
+        } else {
+            newX = snap(x, quantX);
+        }
+    }
+    
+    registry.set(id + "::x", newX);
     outlet(2, "send", id);
     draw_selections();
 }
 
-// NEW: Only snap if a human is driving the Y dial
 function ui_move_y(id, y) {
     var registry = new Dict("SigneRegistry");
     if (!registry.contains(id)) return;
     var v = (isHumanY === 1) ? snap(y, quantY) : y; 
     registry.set(id + "::y", v);
     outlet(2, "send", id);
+    draw_selections();
+}
+
+// NEW: Catch the offset from the UI dial so we can use it in math!
+function ui_trigger_offset(id, val) {
+    var registry = new Dict("SigneRegistry");
+    if (!registry.contains(id)) return;
+    registry.set(id + "::trigger_offset", val);
     draw_selections();
 }
 
@@ -514,7 +547,7 @@ function ui_count(id, val) {
 function ui_spacing(id, val) {
     var registry = new Dict("SigneRegistry");
     if (!registry.contains(id)) return;
-    var v = snap(val, quantSpacing);
+    var v = (isHumanX === 1) ? snap(val, quantSpacing) : val; // Assuming spacing behaves like X
     registry.set(id + "::spacing", v); 
     outlet(2, "send", id); 
     draw_selections();
@@ -571,6 +604,7 @@ function camera_pos(cx, cy) {
     lastCamX = cx; lastCamY = cy;
 }
 
+// NEW: Snap the trigger to the transport playhead, rather than the object center
 function move_to_transport(id) {
     if (!liveSet) liveSet = new LiveAPI(null, "live_set");
     var num = parseFloat(liveSet.get("signature_numerator")[0]);
@@ -579,9 +613,18 @@ function move_to_transport(id) {
     var beats = parseFloat(liveSet.get("current_song_time")[0]);
     var bars = beats / beatsPerBar; 
     
-    var v = snap(bars, quantX);
+    var v = bars;
     var registry = new Dict("SigneRegistry");
     if (!registry.contains(id)) return;
+
+    if (snapToTrigger === 1) {
+        var tOff = registry.get(id + "::trigger_offset") || 0.0;
+        var snappedTriggerPos = snap(bars, quantX);
+        v = snappedTriggerPos - tOff;
+    } else {
+        v = snap(bars, quantX);
+    }
+
     registry.set(id + "::x", v);
     outlet(2, "send", id); outlet(2, "move_x", v); draw_selections();
 }
