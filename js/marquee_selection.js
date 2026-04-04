@@ -32,9 +32,9 @@ var quantSpacing = "free";
 
 var isHumanX = 1; 
 var isHumanY = 1; 
+var isHumanSpacing = 1; // NEW: Independent tracking for Spacing automation
 
-// NEW: 0 = Snap Center, 1 = Snap Trigger
-var snapToTrigger = 1; 
+var snapToTrigger = 0; 
 
 var ROT_MAX = 1.0; 
 
@@ -62,8 +62,8 @@ function set_quant_spacing(v) { quantSpacing = v; }
 
 function is_human_x(v) { isHumanX = v; }
 function is_human_y(v) { isHumanY = v; }
+function is_human_spacing(v) { isHumanSpacing = v; } // NEW: Catch spacing playback state
 
-// NEW: Receive the Snap Mode toggle
 function set_snap_mode(v) { snapToTrigger = v; }
 
 function set_link_scale(state) { 
@@ -251,7 +251,6 @@ function update_group_positions() {
             var bx = registry.get(id + "::base_x");
             var newX;
             
-            // NEW: Snap the Trigger Offset line if active!
             if (snapToTrigger === 1) {
                 var tOff = registry.get(id + "::trigger_offset") || 0.0;
                 var rawTriggerPos = bx + tOff + deltaX;
@@ -419,7 +418,6 @@ function ui_select(target) {
     draw_selections();
 }
 
-// NEW: Dynamically shift the coordinate to snap the trigger instead of the center
 function ui_move_x(id, x) {
     var registry = new Dict("SigneRegistry");
     if (!registry.contains(id)) return;
@@ -449,7 +447,6 @@ function ui_move_y(id, y) {
     draw_selections();
 }
 
-// NEW: Catch the offset from the UI dial so we can use it in math!
 function ui_trigger_offset(id, val) {
     var registry = new Dict("SigneRegistry");
     if (!registry.contains(id)) return;
@@ -547,7 +544,7 @@ function ui_count(id, val) {
 function ui_spacing(id, val) {
     var registry = new Dict("SigneRegistry");
     if (!registry.contains(id)) return;
-    var v = (isHumanX === 1) ? snap(val, quantSpacing) : val; // Assuming spacing behaves like X
+    var v = (isHumanSpacing === 1) ? snap(val, quantSpacing) : val; 
     registry.set(id + "::spacing", v); 
     outlet(2, "send", id); 
     draw_selections();
@@ -604,7 +601,6 @@ function camera_pos(cx, cy) {
     lastCamX = cx; lastCamY = cy;
 }
 
-// NEW: Snap the trigger to the transport playhead, rather than the object center
 function move_to_transport(id) {
     if (!liveSet) liveSet = new LiveAPI(null, "live_set");
     var num = parseFloat(liveSet.get("signature_numerator")[0]);
