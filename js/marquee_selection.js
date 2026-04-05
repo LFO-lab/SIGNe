@@ -607,7 +607,7 @@ function move_to_transport(id) {
     var den = parseFloat(liveSet.get("signature_denominator")[0]);
     var beatsPerBar = (num / den) * 4.0; 
     var beats = parseFloat(liveSet.get("current_song_time")[0]);
-    var bars = beats / beatsPerBar; 
+    var bars = (beats / beatsPerBar) + 1;
     
     var v = bars;
     var registry = new Dict("SigneRegistry");
