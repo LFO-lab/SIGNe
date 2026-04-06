@@ -2,13 +2,13 @@ autowatch = 1;
 
 // --- STATE VARIABLES ---
 var transportPos = 0.0;
-var visibleBars = 12.0; 
+var zoom = 12.0; // Replaced visibleBars
 var aspectRatio = 1.77; 
 var beatsPerBar = 4.0;
 var bpm = 120.0;
 var showTimeMode = 0; 
 var yOffset = -0.9; 
-var textBaseScale = 0.05; // Still the default, equivalent to a dial at 1.0
+var textBaseScale = 0.05; 
 var rulerEnabled = 0; 
 var textColor = [1.0, 1.0, 1.0, 1.0]; 
 
@@ -47,7 +47,7 @@ function notifydeleted() {
 
 // --- DATA ROUTING ---
 function msg_float(v) { transportPos = v; }
-function visible_bars(v) { visibleBars = Math.max(1, v); }
+function zoom_level(v) { zoom = Math.max(1.0, v); } // Send 'zoom_level $1' from your Max dial
 function aspect_ratio(v) { aspectRatio = v; } 
 function beats_per_bar(v) { beatsPerBar = Math.max(1, v); }
 function set_bpm(v) { bpm = Math.max(1, v); }
@@ -55,8 +55,7 @@ function set_mode(v) { showTimeMode = v; }
 
 // --- UI & FEATURES ---
 function font_size(v) { 
-    // Remaps an incoming 0.0 to 1.0 float to a 0.03 to 0.05 scale range
-    var clampedV = Math.max(0.0, Math.min(1.0, v)); // Safety clamp just in case!
+    var clampedV = Math.max(0.0, Math.min(1.0, v)); 
     textBaseScale = 0.03 + (clampedV * 0.02); 
 }
 
@@ -82,21 +81,31 @@ function enable_time_ruler(v) {
 function bang() {
     if (!poolInitialized || rulerEnabled === 0) return;
 
-    var actualVisibleBars = visibleBars * aspectRatio;
-    var startBar = Math.floor(transportPos);
+    var actualVisibleBars = zoom * aspectRatio;
+    
+    // Level of Detail (LOD) - dynamically skip drawing numbers if zoomed out too far
+    var step = 1;
+    if (actualVisibleBars > 32) step = 4;
+    if (actualVisibleBars > 64) step = 8;
+    if (actualVisibleBars > 128) step = 16;
+    if (actualVisibleBars > 256) step = 32;
+
+    // Snap the starting bar to the nearest LOD step boundary
+    var startBar = Math.floor(transportPos / step) * step;
     var endBar = Math.ceil(transportPos + actualVisibleBars);
     
     var correctedXScale = textBaseScale / aspectRatio;
     var voiceIndex = 0;
-    
-    // Nudge value to push the text to the right of the grid line
-    // (0.015 represents roughly 0.75% of the screen width)
     var textNudgeX = 0.004; 
 
-    for (var i = startBar; i <= endBar; i++) {
+    for (var i = startBar; i <= endBar; i += step) {
         if (voiceIndex >= poolSize) break; 
 
         var normX = (i - transportPos) / actualVisibleBars;
+        
+        // Skip drawing if it falls off the left edge (can happen due to LOD snapping)
+        if (normX < 0) continue; 
+        
         var glX = (normX * 2.0) - 1.0; 
 
         var txt = "";
@@ -114,7 +123,6 @@ function bang() {
         }
 
         textPool[voiceIndex].text(txt.toString()); 
-        // Add the nudge to the X position
         textPool[voiceIndex].position = [glX + textNudgeX, yOffset, 0.0];
         textPool[voiceIndex].scale = [correctedXScale, textBaseScale, textBaseScale];
         textPool[voiceIndex].color = textColor; 
