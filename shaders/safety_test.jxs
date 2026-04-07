@@ -1,0 +1,72 @@
+<jittershader name="signe_final">
+    <param name="position" type="vec3" state="POSITION" />
+    <param name="texcoord" type="vec2" state="TEXCOORD" />
+    <param name="modelViewProjectionMatrix" type="mat4" state="MODELVIEW_PROJECTION_MATRIX" />
+    <param name="SymbolAtlas" type="int" default="0" />
+    
+    <param name="p_in" type="vec3" state="VERTEX_ATTR0" />
+    <param name="s_in" type="vec3" state="VERTEX_ATTR3" /> 
+    <param name="c_in" type="vec4" state="VERTEX_ATTR4" />
+    <param name="z_in" type="float" state="VERTEX_ATTR5" />
+
+    <language name="glsl" version="1.5">
+        <bind param="position" program="vp" />
+        <bind param="texcoord" program="vp" />
+        <bind param="modelViewProjectionMatrix" program="vp" />
+        <bind param="p_in" program="vp" />
+        <bind param="s_in" program="vp" />
+        <bind param="c_in" program="vp" />
+        <bind param="z_in" program="vp" />
+        <bind param="SymbolAtlas" program="fp" />
+
+        <program name="vp" type="vertex">
+<![CDATA[
+#version 330 core
+uniform mat4 modelViewProjectionMatrix;
+in vec3 position, p_in, s_in;
+in vec2 texcoord;
+in vec4 c_in;
+in float z_in;
+
+out vec2 vUV;
+out vec4 vColor;
+out float vZ;
+
+void main() {
+    // If scale is zero, we force it to 1.0 so the square is visible
+    vec3 s = (length(s_in) < 0.01) ? vec3(1.0) : s_in;
+    
+    gl_Position = modelViewProjectionMatrix * vec4((position * s) + p_in, 1.0);
+    vUV = texcoord;
+    vColor = c_in;
+    vZ = z_in;
+}
+]]>
+        </program>
+
+        <program name="fp" type="fragment">
+<![CDATA[
+#version 330 core
+uniform sampler3D SymbolAtlas;
+in vec2 vUV;
+in vec4 vColor;
+in float vZ;
+out vec4 fragColor;
+
+void main() {
+    float depth = float(textureSize(SymbolAtlas, 0).z);
+    // Add 0.5 to center the sample in the 3D texture slice
+    float normZ = (vZ + 0.5) / max(depth, 1.0);
+    
+    vec4 tex = texture(SymbolAtlas, vec3(vUV, normZ));
+    
+    // Apply the instance color to the texture
+    fragColor = tex * vec4(vColor.rgb, 1.0);
+    
+    // Discard transparent pixels (important for symbols)
+    if(fragColor.a < 0.1) discard;
+}
+]]>
+        </program>
+    </language>
+</jittershader>
