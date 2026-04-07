@@ -605,12 +605,16 @@ function camera_pos(cx, cy) {
 }
 
 function move_to_transport(id) {
-    if (!liveSet) liveSet = new LiveAPI(null, "live_set");
-    var num = parseFloat(liveSet.get("signature_numerator")[0]);
-    var den = parseFloat(liveSet.get("signature_denominator")[0]);
+    var api = new LiveAPI(null, "live_set");
+    if (!api) return; 
+    
+    var num = parseFloat(api.get("signature_numerator")[0]);
+    var den = parseFloat(api.get("signature_denominator")[0]);
     var beatsPerBar = (num / den) * 4.0; 
-    var beats = parseFloat(liveSet.get("current_song_time")[0]);
-    var bars = (beats / beatsPerBar) + 1;
+    var beats = parseFloat(api.get("current_song_time")[0]);
+    
+    // Add 1.0 so that Bar 1.1.1 (0 beats) maps to PosX 1.0, Bar 23 maps to PosX 23.0
+    var bars = (beats / beatsPerBar) + 1.0; 
     
     var v = bars;
     var registry = new Dict("SigneRegistry");
@@ -629,15 +633,34 @@ function move_to_transport(id) {
 }
 
 function move_transport_to_object(id) {
-    if (!liveSet) liveSet = new LiveAPI(null, "live_set");
+    var api = new LiveAPI(null, "live_set");
+    if (!api) {
+        // post("Error: LiveAPI failed to bind to live_set.\n");
+        return;
+    }
+
     var registry = new Dict("SigneRegistry");
     if (registry.contains(id)) {
-        var num = parseFloat(liveSet.get("signature_numerator")[0]);
-        var den = parseFloat(liveSet.get("signature_denominator")[0]);
+        var num = parseFloat(api.get("signature_numerator")[0]);
+        var den = parseFloat(api.get("signature_denominator")[0]);
         var beatsPerBar = (num / den) * 4.0;
-        var bars = parseFloat(registry.get(id + "::x"));
-        var beats = bars * beatsPerBar;
-        liveSet.set("current_song_time", Number(beats));
+        var posX = parseFloat(registry.get(id + "::x"));
+        
+        var targetBeats = Math.max(0, (posX - 1.0) * beatsPerBar);
+        var songLength = parseFloat(api.get("song_length"));
+        
+        if (targetBeats >= songLength) {
+            // post("SIGNe WARNING: Cannot jump transport to Bar " + posX + "\n");
+            
+            // --- NEW: Send a UI warning to the specific device ---
+            outlet(2, "send", id); 
+            outlet(2, "bounds_error", 1); 
+            
+            return; 
+        }
+        
+        api.set("current_song_time", Number(targetBeats));
+        // post("Moved transport to Bar " + posX + " for object " + id + "\n");
     }
 }
 
