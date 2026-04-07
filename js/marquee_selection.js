@@ -1,7 +1,7 @@
 autowatch = 1;
 
 inlets = 1;
-outlets = 4;
+outlets = 5;
 
 // =========================================================
 // STATE VARIABLES & SETTINGS
@@ -150,6 +150,7 @@ function picker_hit(target, state) {
                         }
                     }
                     registry.set(target + "::selected", 1);
+					outlet(4, target, 1);
                     outlet(2, "send", target); outlet(2, "selected", 1);
 
                     if (linkScale === 1) {
@@ -366,6 +367,7 @@ function release_selection() {
             }
         }
         registry.set(id + "::selected", isSelected);
+        outlet(4, id, (id === leftmostID) ? 1 : 0);
     }
     for (var i = 0; i < keys.length; i++) {
         var id = keys[i]; var isSelected = registry.get(id + "::selected");
@@ -406,6 +408,7 @@ function ui_select(target) {
         }
     }
     registry.set(target + "::selected", 1);
+    outlet(4, target, 1);
     outlet(2, "send", target); outlet(2, "selected", 1);
     take_centroid_snapshot(registry);
 
