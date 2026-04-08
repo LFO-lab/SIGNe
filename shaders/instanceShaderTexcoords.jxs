@@ -1,0 +1,78 @@
+<jittershader name="fill-flat-quads">
+	<description>Default Shader </description>
+	<param name="position" type="vec3" state="POSITION" />
+	<param name="modelViewProjectionMatrix" type="mat4" state="MODELVIEW_PROJECTION_MATRIX" />
+	<param name="color" type="vec4" state="COLOR" />
+	
+	<param name="tex1" type="int" default="0" />
+	<param name="textureMatrix0" type="mat4" state="TEXTURE0_MATRIX" />
+	<param name="texcoord" type="vec2" state="TEXCOORD" />
+
+	<param name="instance_position" type="vec3" state="VERTEX_ATTR0" />
+	<param name="instance_color" type="vec3" state="VERTEX_ATTR3" />
+	<param name="instance_texcoordOffset" type="vec2" state="VERTEX_ATTR2" />
+
+	<language name="glsl" version="1.5">
+		<bind param="position" program="vp" />
+		<bind param="modelViewProjectionMatrix" program="vp" />
+		<bind param="color" program="vp" />
+
+		<bind param="tex1" program="fp" />
+		<bind param="textureMatrix0" program="vp" />
+		<bind param="texcoord" program="vp" />
+				
+		<bind param="instance_position" program="vp" />
+		<bind param="instance_color" program="vp" />
+		<bind param="instance_texcoordOffset" program="vp" />
+		
+				
+		<program name="vp" type="vertex">
+<![CDATA[
+#version 330 core
+uniform mat4 modelViewProjectionMatrix;
+uniform mat4 textureMatrix0;
+
+in vec3 position;
+in vec4 color;
+in vec3 instance_position;
+in vec3 instance_color;
+in vec2 texcoord;
+in vec2 instance_texcoordOffset;
+
+out jit_PerVertex {
+	flat vec4 color;
+	vec3 instance_color0;	
+	vec2 texcoord0;
+} jit_out;
+
+void main() {	
+	gl_Position = modelViewProjectionMatrix * vec4(position + instance_position, 1.);	
+	jit_out.texcoord0 = vec2(textureMatrix0 * vec4(texcoord / vec2(5.0) + instance_texcoordOffset, 0., 1.));
+	jit_out.color = color;
+	jit_out.instance_color0 = instance_color;
+}
+]]>
+		</program>
+		<program name="fp" type="fragment">
+<![CDATA[
+#version 330 core
+
+in jit_PerVertex {
+	flat vec4 color;
+	vec3 instance_color0;	
+	vec2 texcoord0;
+} jit_in;
+
+uniform sampler2D tex1;
+
+out vec4 color;
+
+void main() {
+	vec4 texColor = texture(tex1, jit_in.texcoord0);
+	color = vec4(jit_in.instance_color0, 1.) * texColor;
+	//color = texColor;
+}	
+]]>
+		</program>
+	</language>
+</jittershader>
