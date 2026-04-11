@@ -2,42 +2,19 @@
 	"patcher" : 	{
 		"fileversion" : 1,
 		"appversion" : 		{
-			"major" : 8,
-			"minor" : 6,
-			"revision" : 5,
+			"major" : 9,
+			"minor" : 0,
+			"revision" : 9,
 			"architecture" : "x64",
 			"modernui" : 1
 		}
 ,
 		"classnamespace" : "box",
-		"rect" : [ -2266.0, -1363.0, 2025.0, 1282.0 ],
-		"bglocked" : 0,
-		"openinpresentation" : 0,
-		"default_fontsize" : 12.0,
-		"default_fontface" : 0,
-		"default_fontname" : "Arial",
+		"rect" : [ -1897.0, -1352.0, 2025.0, 1282.0 ],
 		"gridonopen" : 2,
 		"gridsize" : [ 15.0, 15.0 ],
 		"gridsnaponopen" : 2,
 		"objectsnaponopen" : 0,
-		"statusbarvisible" : 2,
-		"toolbarvisible" : 1,
-		"lefttoolbarpinned" : 0,
-		"toptoolbarpinned" : 0,
-		"righttoolbarpinned" : 0,
-		"bottomtoolbarpinned" : 0,
-		"toolbars_unpinned_last_save" : 0,
-		"tallnewobj" : 0,
-		"boxanimatetime" : 200,
-		"enablehscroll" : 1,
-		"enablevscroll" : 1,
-		"devicewidth" : 0.0,
-		"description" : "",
-		"digest" : "",
-		"tags" : "",
-		"style" : "",
-		"subpatcher_template" : "",
-		"assistshowspatchername" : 0,
 		"boxes" : [ 			{
 				"box" : 				{
 					"id" : "obj-32",
@@ -58,7 +35,7 @@
 					"numoutlets" : 1,
 					"outlettype" : [ "bang" ],
 					"parameter_enable" : 0,
-					"patching_rect" : [ 975.0, 315.0, 24.0, 24.0 ]
+					"patching_rect" : [ 1230.0, 315.0, 24.0, 24.0 ]
 				}
 
 			}
@@ -69,7 +46,7 @@
 					"numinlets" : 1,
 					"numoutlets" : 2,
 					"outlettype" : [ "jit_matrix", "" ],
-					"patching_rect" : [ 975.0, 360.0, 123.0, 22.0 ],
+					"patching_rect" : [ 1230.0, 360.0, 123.0, 22.0 ],
 					"text" : "jit.matrix 3 float32 5 5"
 				}
 
@@ -84,42 +61,16 @@
 					"patcher" : 					{
 						"fileversion" : 1,
 						"appversion" : 						{
-							"major" : 8,
-							"minor" : 6,
-							"revision" : 5,
+							"major" : 9,
+							"minor" : 0,
+							"revision" : 9,
 							"architecture" : "x64",
 							"modernui" : 1
 						}
 ,
 						"classnamespace" : "jit.gen",
 						"rect" : [ -1460.0, -763.0, 599.0, 238.0 ],
-						"bglocked" : 0,
-						"openinpresentation" : 0,
-						"default_fontsize" : 12.0,
-						"default_fontface" : 0,
-						"default_fontname" : "Arial",
-						"gridonopen" : 1,
 						"gridsize" : [ 15.0, 15.0 ],
-						"gridsnaponopen" : 1,
-						"objectsnaponopen" : 1,
-						"statusbarvisible" : 2,
-						"toolbarvisible" : 1,
-						"lefttoolbarpinned" : 0,
-						"toptoolbarpinned" : 0,
-						"righttoolbarpinned" : 0,
-						"bottomtoolbarpinned" : 0,
-						"toolbars_unpinned_last_save" : 0,
-						"tallnewobj" : 0,
-						"boxanimatetime" : 200,
-						"enablehscroll" : 1,
-						"enablevscroll" : 1,
-						"devicewidth" : 0.0,
-						"description" : "",
-						"digest" : "",
-						"tags" : "",
-						"style" : "",
-						"subpatcher_template" : "",
-						"assistshowspatchername" : 0,
 						"boxes" : [ 							{
 								"box" : 								{
 									"id" : "obj-3",
@@ -154,7 +105,7 @@
  ]
 					}
 ,
-					"patching_rect" : [ 975.0, 390.0, 100.0, 22.0 ],
+					"patching_rect" : [ 1230.0, 390.0, 100.0, 22.0 ],
 					"text" : "jit.gen"
 				}
 
@@ -166,8 +117,8 @@
 					"numinlets" : 1,
 					"numoutlets" : 2,
 					"outlettype" : [ "jit_gl_buffer", "" ],
-					"patching_rect" : [ 975.0, 435.0, 262.0, 22.0 ],
-					"text" : "jit.gl.buffer tut @type vertex_attr3 @instanced 1"
+					"patching_rect" : [ 1230.0, 435.0, 262.0, 22.0 ],
+					"text" : "jit.gl.buffer tut @type vertex_attr1 @instanced 1"
 				}
 
 			}
@@ -179,7 +130,7 @@
 					"numoutlets" : 1,
 					"outlettype" : [ "bang" ],
 					"parameter_enable" : 0,
-					"patching_rect" : [ 1275.0, 315.0, 24.0, 24.0 ]
+					"patching_rect" : [ 960.0, 315.0, 24.0, 24.0 ]
 				}
 
 			}
@@ -190,7 +141,7 @@
 					"numinlets" : 1,
 					"numoutlets" : 2,
 					"outlettype" : [ "jit_matrix", "" ],
-					"patching_rect" : [ 1275.0, 360.0, 123.0, 22.0 ],
+					"patching_rect" : [ 960.0, 360.0, 123.0, 22.0 ],
 					"text" : "jit.matrix 3 float32 5 5"
 				}
 
@@ -205,42 +156,16 @@
 					"patcher" : 					{
 						"fileversion" : 1,
 						"appversion" : 						{
-							"major" : 8,
-							"minor" : 6,
-							"revision" : 5,
+							"major" : 9,
+							"minor" : 0,
+							"revision" : 9,
 							"architecture" : "x64",
 							"modernui" : 1
 						}
 ,
 						"classnamespace" : "jit.gen",
 						"rect" : [ -1460.0, -763.0, 599.0, 238.0 ],
-						"bglocked" : 0,
-						"openinpresentation" : 0,
-						"default_fontsize" : 12.0,
-						"default_fontface" : 0,
-						"default_fontname" : "Arial",
-						"gridonopen" : 1,
 						"gridsize" : [ 15.0, 15.0 ],
-						"gridsnaponopen" : 1,
-						"objectsnaponopen" : 1,
-						"statusbarvisible" : 2,
-						"toolbarvisible" : 1,
-						"lefttoolbarpinned" : 0,
-						"toptoolbarpinned" : 0,
-						"righttoolbarpinned" : 0,
-						"bottomtoolbarpinned" : 0,
-						"toolbars_unpinned_last_save" : 0,
-						"tallnewobj" : 0,
-						"boxanimatetime" : 200,
-						"enablehscroll" : 1,
-						"enablevscroll" : 1,
-						"devicewidth" : 0.0,
-						"description" : "",
-						"digest" : "",
-						"tags" : "",
-						"style" : "",
-						"subpatcher_template" : "",
-						"assistshowspatchername" : 0,
 						"boxes" : [ 							{
 								"box" : 								{
 									"id" : "obj-6",
@@ -351,7 +276,7 @@
  ]
 					}
 ,
-					"patching_rect" : [ 1275.0, 390.0, 100.0, 22.0 ],
+					"patching_rect" : [ 960.0, 390.0, 100.0, 22.0 ],
 					"text" : "jit.gen"
 				}
 
@@ -363,7 +288,7 @@
 					"numinlets" : 1,
 					"numoutlets" : 2,
 					"outlettype" : [ "jit_gl_buffer", "" ],
-					"patching_rect" : [ 1275.0, 435.0, 262.0, 22.0 ],
+					"patching_rect" : [ 960.0, 435.0, 262.0, 22.0 ],
 					"text" : "jit.gl.buffer tut @type vertex_attr2 @instanced 1"
 				}
 
@@ -399,20 +324,28 @@
 					"numinlets" : 1,
 					"numoutlets" : 3,
 					"outlettype" : [ "jit_matrix", "jit_matrix", "" ],
-					"patching_rect" : [ 330.0, 465.0, 195.0, 22.0 ],
+					"patching_rect" : [ 255.0, 450.0, 195.0, 22.0 ],
 					"text" : "jit.unpack 2 @jump 3 2 @offset 0 3"
 				}
 
 			}
 , 			{
 				"box" : 				{
+					"filename" : "instanceShaderTexcoords.jxs",
 					"id" : "obj-15",
 					"maxclass" : "newobj",
 					"numinlets" : 1,
 					"numoutlets" : 2,
 					"outlettype" : [ "", "" ],
 					"patching_rect" : [ 495.0, 630.0, 464.0, 22.0 ],
-					"text" : "jit.gl.shader tut @name instanceShaderTexcoords @file instanceShaderTexcoords.jxs"
+					"text" : "jit.gl.shader tut @name instanceShaderTexcoords @file instanceShaderTexcoords.jxs",
+					"textfile" : 					{
+						"filename" : "instanceShaderTexcoords.jxs",
+						"flags" : 0,
+						"embed" : 0,
+						"autowatch" : 1
+					}
+
 				}
 
 			}
@@ -424,7 +357,7 @@
 					"numoutlets" : 1,
 					"outlettype" : [ "bang" ],
 					"parameter_enable" : 0,
-					"patching_rect" : [ 330.0, 360.0, 24.0, 24.0 ]
+					"patching_rect" : [ 255.0, 345.0, 24.0, 24.0 ]
 				}
 
 			}
@@ -474,42 +407,16 @@
 					"patcher" : 					{
 						"fileversion" : 1,
 						"appversion" : 						{
-							"major" : 8,
-							"minor" : 6,
-							"revision" : 5,
+							"major" : 9,
+							"minor" : 0,
+							"revision" : 9,
 							"architecture" : "x64",
 							"modernui" : 1
 						}
 ,
 						"classnamespace" : "jit.gen",
 						"rect" : [ -1460.0, -974.0, 599.0, 450.0 ],
-						"bglocked" : 0,
-						"openinpresentation" : 0,
-						"default_fontsize" : 12.0,
-						"default_fontface" : 0,
-						"default_fontname" : "Arial",
-						"gridonopen" : 1,
 						"gridsize" : [ 15.0, 15.0 ],
-						"gridsnaponopen" : 1,
-						"objectsnaponopen" : 1,
-						"statusbarvisible" : 2,
-						"toolbarvisible" : 1,
-						"lefttoolbarpinned" : 0,
-						"toptoolbarpinned" : 0,
-						"righttoolbarpinned" : 0,
-						"bottomtoolbarpinned" : 0,
-						"toolbars_unpinned_last_save" : 0,
-						"tallnewobj" : 0,
-						"boxanimatetime" : 200,
-						"enablehscroll" : 1,
-						"enablevscroll" : 1,
-						"devicewidth" : 0.0,
-						"description" : "",
-						"digest" : "",
-						"tags" : "",
-						"style" : "",
-						"subpatcher_template" : "",
-						"assistshowspatchername" : 0,
 						"boxes" : [ 							{
 								"box" : 								{
 									"id" : "obj-1",
@@ -580,7 +487,7 @@
 					"numinlets" : 9,
 					"numoutlets" : 2,
 					"outlettype" : [ "", "" ],
-					"patching_rect" : [ 330.0, 510.0, 433.0, 22.0 ],
+					"patching_rect" : [ 255.0, 495.0, 433.0, 22.0 ],
 					"text" : "jit.gl.mesh tut @color 1 1 1 1 @shader instanceShaderTexcoords @texture tex1"
 				}
 
@@ -593,7 +500,7 @@
 					"numinlets" : 1,
 					"numoutlets" : 2,
 					"outlettype" : [ "jit_matrix", "" ],
-					"patching_rect" : [ 330.0, 405.0, 333.0, 36.0 ],
+					"patching_rect" : [ 255.0, 390.0, 333.0, 36.0 ],
 					"text" : "jit.gl.gridshape tut @automatic 0 @matrixoutput 2 @scale 0.2 @dim 2 2 @shape plane"
 				}
 
@@ -681,6 +588,7 @@
 , 			{
 				"patchline" : 				{
 					"destination" : [ "obj-6", 8 ],
+					"midpoints" : [ 1239.5, 476.0, 678.5, 476.0 ],
 					"source" : [ "obj-19", 0 ]
 				}
 
@@ -737,6 +645,7 @@
 , 			{
 				"patchline" : 				{
 					"destination" : [ "obj-6", 8 ],
+					"midpoints" : [ 969.5, 476.0, 678.5, 476.0 ],
 					"source" : [ "obj-30", 0 ]
 				}
 
@@ -758,6 +667,7 @@
 , 			{
 				"patchline" : 				{
 					"destination" : [ "obj-6", 8 ],
+					"midpoints" : [ 684.5, 476.0, 678.5, 476.0 ],
 					"source" : [ "obj-7", 0 ]
 				}
 
@@ -771,7 +681,8 @@
 			}
  ],
 		"dependency_cache" : [  ],
-		"autosave" : 0
+		"autosave" : 0,
+		"oscreceiveudpport" : 0
 	}
 
 }

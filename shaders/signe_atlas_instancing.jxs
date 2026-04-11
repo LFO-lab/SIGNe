@@ -1,0 +1,143 @@
+<jittershader name="signe_atlas_instancing">
+	<param name="position" type="vec3" state="POSITION" />
+	<param name="modelViewProjectionMatrix" type="mat4" state="MODELVIEW_PROJECTION_MATRIX" />
+	<param name="texcoord" type="vec2" state="TEXCOORD" />
+	
+	<param name="normal" type="vec3" state="NORMAL" />
+
+	<param name="instance_transform" type="vec4" state="VERTEX_ATTR0" /> <param name="instance_sym_color" type="vec4" state="VERTEX_ATTR1" /> <param name="instance_pat_color" type="vec4" state="VERTEX_ATTR2" /> <param name="instance_scale_idx" type="vec4" state="VERTEX_ATTR3" /> <param name="texSymbols" type="int" default="0" />
+	<param name="texPatterns" type="int" default="1" />
+
+	<language name="glsl" version="1.5">
+		<bind param="position" program="vp" />
+		<bind param="modelViewProjectionMatrix" program="vp" />
+		<bind param="texcoord" program="vp" />
+		
+		<bind param="normal" program="vp" />
+
+		<bind param="instance_transform" program="vp" />
+		<bind param="instance_sym_color" program="vp" />
+		<bind param="instance_pat_color" program="vp" />
+		<bind param="instance_scale_idx" program="vp" />
+
+		<bind param="texSymbols" program="fp" />
+		<bind param="texPatterns" program="fp" />
+
+		<program name="vp" type="vertex">
+		<![CDATA[
+		#version 330 core
+		uniform mat4 modelViewProjectionMatrix;
+
+		in vec3 position;
+		in vec2 texcoord;
+		
+		// Hijacked buffer for Tiling Data
+		in vec3 normal;
+
+		// 16-Channel Packed Buffers
+		in vec4 instance_transform;
+		in vec4 instance_sym_color;
+		in vec4 instance_pat_color;
+		in vec4 instance_scale_idx;
+
+		// The struct to pass all unpacked data to the fragment shader
+		out jit_PerVertex {
+			vec2 texcoord;
+			vec4 sym_color;
+			vec4 pat_color;
+			flat float sym_idx; 
+			flat float pat_idx;
+			vec2 pat_tiling; // NEW: Passed from normal buffer
+		} jit_out;
+
+		void main() {
+			// 1. Unpack Transform and Scale
+			vec3 pos = instance_transform.xyz;
+			float rot = instance_transform.w;
+			vec2 scale = instance_scale_idx.xy;
+
+			// 2. Build a 2D Rotation Matrix
+			float s = sin(rot);
+			float c = cos(rot);
+			mat2 rot_mat = mat2(c, -s, s, c);
+
+			// 3. Apply Scale, then Rotate (only on XY plane)
+			vec2 scaled_rotated_pos = rot_mat * (position.xy * scale);
+			
+			// 4. Add instance position and project to screen
+			vec3 final_pos = vec3(scaled_rotated_pos, 0.0) + pos;
+			gl_Position = modelViewProjectionMatrix * vec4(final_pos, 1.0);
+
+			// 5. Pass data through the struct
+			jit_out.texcoord = texcoord;
+			jit_out.sym_color = instance_sym_color;
+			jit_out.pat_color = instance_pat_color;
+			jit_out.sym_idx = instance_scale_idx.z;
+			jit_out.pat_idx = instance_scale_idx.w;
+			
+			// 6. Grab Tiling X and Y from the hijacked normal buffer
+			jit_out.pat_tiling = normal.xy;
+		}
+		]]>
+		</program>
+		
+		<program name="fp" type="fragment">
+		<![CDATA[
+		#version 330 core
+
+		uniform sampler3D texSymbols;
+		uniform sampler3D texPatterns;
+
+		in jit_PerVertex {
+			vec2 texcoord;
+			vec4 sym_color;
+			vec4 pat_color;
+			flat float sym_idx;
+			flat float pat_idx;
+			vec2 pat_tiling;
+		} jit_in;
+
+		out vec4 fragColor;
+
+		void main() {
+			// 1. Get dimensions of both atlases
+			ivec3 sym_dim = textureSize(texSymbols, 0);
+			ivec3 pat_dim = textureSize(texPatterns, 0);
+			
+			// 2. Calculate normalized Z coordinates
+			float sym_z = (jit_in.sym_idx + 0.5) / float(sym_dim.z);
+			float pat_z = (jit_in.pat_idx + 0.5) / float(pat_dim.z);
+
+			// 3. Sample the Symbol Texture first
+			vec4 sym_texColor = texture(texSymbols, vec3(jit_in.texcoord, sym_z));
+
+			// 4. Stencil / Depth Masking
+			if (sym_texColor.a < 0.05) {
+				discard;
+			}
+
+			// 5. Calculate Centered UV Tiling for the Pattern
+			// We subtract 0.5, apply the scale, then add 0.5 back.
+			// We then use fract() to force the coordinates to infinitely wrap
+			vec2 tiled_uv = fract((jit_in.texcoord - 0.5) * jit_in.pat_tiling + 0.5);
+			
+			// 6. Sample the Pattern Texture with the new tiled UV coordinates
+			vec4 pat_texColor = texture(texPatterns, vec3(tiled_uv, pat_z));
+
+			// 7. Apply user colors
+			vec4 base_symbol = sym_texColor * jit_in.sym_color;
+			vec4 overlay_pattern = pat_texColor * jit_in.pat_color;
+
+			// 8. Stencil the Pattern over the Symbol
+			overlay_pattern.a *= sym_texColor.a;
+
+			// 9. Composite
+			fragColor = mix(base_symbol, overlay_pattern, overlay_pattern.a);
+
+			// 10. Enforce Master Alpha
+			fragColor.a = sym_texColor.a * jit_in.sym_color.a;
+		}
+		]]>
+		</program>
+	</language>
+</jittershader>

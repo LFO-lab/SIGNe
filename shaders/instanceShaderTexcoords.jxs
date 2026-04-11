@@ -9,7 +9,7 @@
 	<param name="texcoord" type="vec2" state="TEXCOORD" />
 
 	<param name="instance_position" type="vec3" state="VERTEX_ATTR0" />
-	<param name="instance_color" type="vec3" state="VERTEX_ATTR3" />
+	<param name="instance_color" type="vec3" state="VERTEX_ATTR1" />
 	<param name="instance_texcoordOffset" type="vec2" state="VERTEX_ATTR2" />
 
 	<language name="glsl" version="1.5">
