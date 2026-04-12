@@ -1,0 +1,54 @@
+<jittershader name="signe_atlas_instancing">
+	<param name="position" type="vec3" state="POSITION" />
+	<param name="modelViewProjectionMatrix" type="mat4" state="MODELVIEW_PROJECTION_MATRIX" />
+	
+	<param name="inst_pos" type="vec4" /> 
+
+	<language name="glsl" version="1.5">
+		<bind param="position" program="vp" />
+		<bind param="modelViewProjectionMatrix" program="vp" />
+		<bind param="inst_pos" program="vp" />
+
+		<program name="vp" type="vertex">
+		<![CDATA[
+		#version 330 core
+		uniform mat4 modelViewProjectionMatrix;
+		in vec3 position;
+		
+		// Custom attribute fed by jit.gl.multiple @glparams
+		in vec4 inst_pos;
+
+		void main() {
+			// 1. Unpack Transform
+			vec3 pos = inst_pos.xyz;
+			float rot = inst_pos.w;
+			
+			// 2. HARDCODED SCALE (so we can actually see it)
+			vec2 scale = vec2(0.5, 0.5); 
+
+			// 3. Apply Rotation and Scale
+			float s = sin(rot);
+			float c = cos(rot);
+			mat2 rot_mat = mat2(c, -s, s, c);
+			vec2 scaled_rotated_pos = rot_mat * (position.xy * scale);
+
+			// 4. Add instance position and project to screen
+			vec3 final_pos = vec3(scaled_rotated_pos, 0.0) + pos;
+			gl_Position = modelViewProjectionMatrix * vec4(final_pos, 1.0);
+		}
+		]]>
+		</program>
+		
+		<program name="fp" type="fragment">
+		<![CDATA[
+		#version 330 core
+		out vec4 fragColor;
+
+		void main() {
+			// FORCE A SOLID RED SQUARE
+			fragColor = vec4(1.0, 0.0, 0.0, 1.0); 
+		}
+		]]>
+		</program>
+	</language>
+</jittershader>
