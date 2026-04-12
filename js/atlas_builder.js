@@ -1,11 +1,11 @@
 autowatch = 1;
 
 // 1. Define our GPU Textures
-var texSymbols = new JitterObject("jit.gl.texture", "SIGNe1");
+var texSymbols = new JitterObject("jit.gl.texture", "SIGNe");
 texSymbols.name = "SymbolAtlas";
 texSymbols.filter = "none"; // Disables Z-axis interpolation!
 
-var texPatterns = new JitterObject("jit.gl.texture", "SIGNe1");
+var texPatterns = new JitterObject("jit.gl.texture", "SIGNe");
 texPatterns.name = "PatternAtlas";
 texPatterns.filter = "none";
 

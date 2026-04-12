@@ -113,7 +113,7 @@
 
 			// 4. Stencil / Depth Masking
 			if (sym_texColor.a < 0.05) {
-				discard;
+			//	discard;
 			}
 
 			// 5. Calculate Centered UV Tiling for the Pattern
@@ -136,6 +136,7 @@
 
 			// 10. Enforce Master Alpha
 			fragColor.a = sym_texColor.a * jit_in.sym_color.a;
+            // fragColor = vec4(1.0, 0.0, 0.0, 1.0); // FORCE RED
 		}
 		]]>
 		</program>
