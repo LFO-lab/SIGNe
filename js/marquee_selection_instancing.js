@@ -74,7 +74,6 @@ function focus_live_device(id) {
         if (!liveViewAPI) {
             liveViewAPI = new LiveAPI(null, "live_set view");
         }
-        // First select the track, then the specific device
         liveViewAPI.set("selected_track", "id", parseInt(track_id));
         liveViewAPI.call("select_device", "id", parseInt(device_id));
     }
@@ -215,7 +214,6 @@ function picker_hit(target, state) {
                 }
                 outlet(2, "send", mathHitID); outlet(2, "selected_via_mouse", 1);
                 
-                // CALLING THE NEW LIVE FOCUS FUNCTION
                 focus_live_device(mathHitID);
                 
                 if (isODown === 1) isAdjustingOpacityGroup = true;
@@ -420,8 +418,6 @@ function release_selection() {
         var id = keys[i]; var isSelected = registry.get(id + "::selected");
         outlet(2, "send", id); outlet(2, "selected", isSelected); 
         outlet(2, "selected_via_mouse", (id === leftmostID) ? 1 : 0);
-        
-        // Ensure Live focus updates on marquee release for the leftmost selected object
         if (id === leftmostID) focus_live_device(id);
     }
     draw_selections();
@@ -467,6 +463,32 @@ function ui_select(target) {
         activeRatio = (x !== 0) ? (y / x) : 1.0;
     }
     draw_selections();
+}
+
+// THE NEW LIVE UI REVERSE-LOOKUP FUNCTION
+function live_device_selected(device_id) {
+    if (isScrubbing) return;
+    var registry = new Dict("SigneRegistry");
+    var keys = registry.getkeys();
+    if (keys == null) return;
+    if (typeof keys === "string") keys = [keys];
+
+    for (var i = 0; i < keys.length; i++) {
+        var id = keys[i];
+        var reg_dev_id = registry.get(id + "::live_device_id");
+        
+        if (reg_dev_id !== null && parseInt(reg_dev_id) === parseInt(device_id)) {
+            // Prevent redundant selection updates if it's already the active object
+            if (registry.get(id + "::selected") != 1) {
+                // Temporarily bypass the 500ms viewport interaction block
+                var tempTime = lastViewportInteractionTime;
+                lastViewportInteractionTime = 0; 
+                ui_select(id);
+                lastViewportInteractionTime = tempTime;
+            }
+            return;
+        }
+    }
 }
 
 function ui_move_x(id, x) {
