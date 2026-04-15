@@ -3,26 +3,13 @@
 	<param name="modelViewProjectionMatrix" type="mat4" state="MODELVIEW_PROJECTION_MATRIX" />
 	<param name="texcoord" type="vec2" state="TEXCOORD" />
 	
-	<param name="inst_pos" type="vec4" state="VERTEX_ATTR0" /> 
-	<param name="inst_col1" type="vec4" state="VERTEX_ATTR1" /> 
-	<param name="inst_col2" type="vec4" state="VERTEX_ATTR2" /> 
-	<param name="inst_scl" type="vec4" state="VERTEX_ATTR3" /> 
-
-	<param name="tex0" type="int" default="0" />
-	<param name="tex1" type="int" default="1" />
+	<param name="inst_col" type="vec4" state="VERTEX_ATTR0" /> <param name="inst_pos" type="vec4" state="VERTEX_ATTR1" /> <param name="inst_rot" type="vec4" state="VERTEX_ATTR2" /> <param name="inst_scl" type="vec4" state="VERTEX_ATTR3" /> <param name="tex0" type="int" default="0" />
 
 	<language name="glsl" version="1.5">
-		<bind param="position" program="vp" />
-		<bind param="modelViewProjectionMatrix" program="vp" />
-		<bind param="texcoord" program="vp" />
-		
-		<bind param="inst_pos" program="vp" />
-		<bind param="inst_col1" program="vp" />
-		<bind param="inst_col2" program="vp" />
-		<bind param="inst_scl" program="vp" />
-
-		<bind param="tex0" program="fp" />
-		<bind param="tex1" program="fp" />
+		<bind param="position" program="vp" /><bind param="modelViewProjectionMatrix" program="vp" />
+		<bind param="texcoord" program="vp" /><bind param="inst_col" program="vp" />
+		<bind param="inst_pos" program="vp" /><bind param="inst_rot" program="vp" />
+		<bind param="inst_scl" program="vp" /><bind param="tex0" program="fp" />
 
 		<program name="vp" type="vertex">
 		<![CDATA[
@@ -30,60 +17,33 @@
 		uniform mat4 modelViewProjectionMatrix;
 		in vec3 position;
 		in vec2 texcoord;
-		
-		in vec4 inst_pos;
-		in vec4 inst_col1;
-		in vec4 inst_col2;
-		in vec4 inst_scl;
+		in vec4 inst_col, inst_pos, inst_rot, inst_scl;
 
-		out jit_PerVertex {
-			vec2 uv;
-			vec4 col1;
-			vec4 col2;
-		} jit_out;
+		out jit_PerVertex { vec2 uv; vec4 col; } jit_out;
 
 		void main() {
-			vec3 pos = inst_pos.xyz;
-			float rot = inst_pos.w;
+			float rot = inst_rot.x;
 			vec2 scale = inst_scl.xy;
+			mat2 rot_mat = mat2(cos(rot), -sin(rot), sin(rot), cos(rot));
 
-			float s = sin(rot);
-			float c = cos(rot);
-			mat2 rot_mat = mat2(c, -s, s, c);
-
-			vec2 scaled_rotated_pos = rot_mat * (position.xy * scale);
-			vec3 final_pos = vec3(scaled_rotated_pos, 0.0) + pos;
+			vec2 transformed = rot_mat * (position.xy * scale);
+			vec3 final_pos = vec3(transformed, 0.0) + inst_pos.xyz;
 
 			gl_Position = modelViewProjectionMatrix * vec4(final_pos, 1.0);
-
 			jit_out.uv = texcoord;
-			jit_out.col1 = inst_col1;
-			jit_out.col2 = inst_col2;
+			jit_out.col = inst_col;
 		}
 		]]>
 		</program>
 		
-<program name="fp" type="fragment">
+		<program name="fp" type="fragment">
 		<![CDATA[
 		#version 330 core
 		uniform sampler2D tex0;
-		uniform sampler2D tex1;
-
-		in jit_PerVertex {
-			vec2 uv;
-			vec4 col1;
-			vec4 col2;
-		} jit_in;
-
+		in jit_PerVertex { vec2 uv; vec4 col; } jit_in;
 		out vec4 fragColor;
-
 		void main() {
-			vec4 t0 = texture(tex0, jit_in.uv);
-			vec4 t1 = texture(tex1, jit_in.uv);
-
-			// BYPASS MULTIPLICATION: Just add the raw colors to the textures
-			// If the textures are failing (black), you will still see the col1/col2 data!
-			fragColor = t0 * jit_in.col1 + t1 * jit_in.col2;
+			fragColor = texture(tex0, jit_in.uv) * jit_in.col;
 		}
 		]]>
 		</program>

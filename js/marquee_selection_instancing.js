@@ -29,7 +29,7 @@ var matScl = new JitterMatrix(4, "float32", 1); matScl.name = "SIGNe_Scl_Data";
 var matTil = new JitterMatrix(3, "float32", 1); matTil.name = "SIGNe_Til_Data";
 
 // =========================================================
-// ZERO-LAG ROUND-ROBIN QUEUE
+// SIMULTANEOUS GPU UPLOAD
 // =========================================================
 var dirty_pos = false;
 var dirty_sym = false;
@@ -37,9 +37,6 @@ var dirty_pat = false;
 var dirty_scl = false;
 var dirty_til = false;
 var needs_recalc = false;
-
-var check_order = [5, 8, 6, 7, 9];
-var current_check_idx = 0;
 
 function mark_dirty(pos, sym, pat, scl, til) {
     if (pos) dirty_pos = true;
@@ -57,18 +54,13 @@ function bang() {
         needs_recalc = false;
     }
 
-    // Check up to 5 times to find the next dirty buffer.
-    // We only output ONE bang per frame to completely prevent OpenGL locking.
-    for (var i = 0; i < 5; i++) {
-        var outlet_num = check_order[current_check_idx];
-        current_check_idx = (current_check_idx + 1) % 5;
-
-        if (outlet_num === 5 && dirty_pos) { outlet(5, "bang"); dirty_pos = false; return; }
-        if (outlet_num === 8 && dirty_scl) { outlet(8, "bang"); dirty_scl = false; return; }
-        if (outlet_num === 6 && dirty_sym) { outlet(6, "bang"); dirty_sym = false; return; }
-        if (outlet_num === 7 && dirty_pat) { outlet(7, "bang"); dirty_pat = false; return; }
-        if (outlet_num === 9 && dirty_til) { outlet(9, "bang"); dirty_til = false; return; }
-    }
+    // Blast all dirty buffers out simultaneously!
+    // Since they are now on separate inlets, Jitter will process them correctly in one frame.
+    if (dirty_pos) { outlet(5, "bang"); dirty_pos = false; }
+    if (dirty_sym) { outlet(6, "bang"); dirty_sym = false; }
+    if (dirty_pat) { outlet(7, "bang"); dirty_pat = false; }
+    if (dirty_scl) { outlet(8, "bang"); dirty_scl = false; }
+    if (dirty_til) { outlet(9, "bang"); dirty_til = false; }
 }
 
 // =========================================================
