@@ -132,7 +132,8 @@
 			overlay_pattern.a *= sym_texColor.a;
 
 			// 9. Composite
-			fragColor = mix(base_symbol, overlay_pattern, overlay_pattern.a);
+			// fragColor = mix(base_symbol, overlay_pattern, overlay_pattern.a);
+			fragColor = base_symbol;
 
 			// 10. Enforce Master Alpha
 			fragColor.a = sym_texColor.a * jit_in.sym_color.a;

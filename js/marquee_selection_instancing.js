@@ -204,6 +204,7 @@ function picker_hit(target, state) {
                         }
                     }
                     registry.set(mathHitID + "::selected", 1);
+                    update_properties_window(mathHitID);
 					outlet(4, mathHitID, 1);
                     outlet(2, "send", mathHitID); outlet(2, "selected", 1);
 
@@ -418,7 +419,10 @@ function release_selection() {
         var id = keys[i]; var isSelected = registry.get(id + "::selected");
         outlet(2, "send", id); outlet(2, "selected", isSelected); 
         outlet(2, "selected_via_mouse", (id === leftmostID) ? 1 : 0);
-        if (id === leftmostID) focus_live_device(id);
+        if (id === leftmostID) {
+            focus_live_device(id);
+            update_properties_window(id);
+        }
     }
     draw_selections();
     mark_dirty(1, 1, 1, 1, 1); 
@@ -456,6 +460,7 @@ function ui_select(target) {
     }
     registry.set(target + "::selected", 1);
     outlet(4, target, 1); outlet(2, "send", target); outlet(2, "selected", 1);
+    update_properties_window(target);
     take_centroid_snapshot(registry);
 
     if (linkScale === 1) {
@@ -591,6 +596,123 @@ function ui_bounds_y(id, val) {
     registry.set(id + "::bounds_y", val); draw_selections();
 }
 
+// --- POSITION / SCALE / LAYER ---
+function ui_layer(id, val) {
+    var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
+    registry.set(id + "::layer", val); mark_dirty(1, 0, 0, 0, 0);
+}
+
+// --- SYMBOL COLOUR & TEXTURE ---
+function ui_symbol_texture(id, val) {
+    var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
+    registry.set(id + "::symbol_texture", val); mark_dirty(0, 0, 0, 1, 0);
+}
+
+function ui_symbol_colour_start_rgb() {
+    var args = arrayfromargs(arguments);
+    var id = args[0];
+    var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
+    registry.set(id + "::symbol_colour_start_rgb", args.slice(1)); 
+    mark_dirty(0, 1, 0, 0, 0);
+}
+
+function ui_symbol_colour_start_sat(id, val) {
+    var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
+    registry.set(id + "::symbol_colour_start_sat", val); 
+    // Saturation logic will be handled later in master patch colour rendering
+}
+
+function ui_symbol_colour_end_rgb() {
+    var args = arrayfromargs(arguments);
+    var id = args[0];
+    var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
+    registry.set(id + "::symbol_colour_end_rgb", args.slice(1)); 
+    mark_dirty(0, 1, 0, 0, 0);
+}
+
+function ui_symbol_colour_end_sat(id, val) {
+    var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
+    registry.set(id + "::symbol_colour_end_sat", val);
+}
+function ui_symbol_colour_interp(id, val) {
+    var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
+    registry.set(id + "::symbol_colour_interp", val);
+}
+
+// --- PATTERN COLOUR, TEXTURE & TILING ---
+function ui_pattern_texture(id, val) {
+    var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
+    registry.set(id + "::pattern_texture", val); mark_dirty(0, 0, 0, 1, 0);
+}
+function ui_pattern_tiling(id, val) {
+    var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
+    registry.set(id + "::pat_tiling_x", val); registry.set(id + "::pat_tiling_y", val); mark_dirty(0, 0, 0, 0, 1);
+}
+function ui_pattern_intensity(id, val) {
+    var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
+    registry.set(id + "::pattern_intensity", val); 
+}
+
+function ui_pattern_colour_start_rgb() {
+    var args = arrayfromargs(arguments);
+    var id = args[0];
+    var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
+    registry.set(id + "::pattern_colour_start_rgb", args.slice(1)); 
+    mark_dirty(0, 0, 1, 0, 0);
+}
+
+function ui_pattern_colour_start_sat(id, val) {
+    var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
+    registry.set(id + "::pattern_colour_start_sat", val);
+}
+
+function ui_pattern_colour_end_rgb() {
+    var args = arrayfromargs(arguments);
+    var id = args[0];
+    var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
+    registry.set(id + "::pattern_colour_end_rgb", args.slice(1)); 
+    mark_dirty(0, 0, 1, 0, 0);
+}
+
+function ui_pattern_colour_end_sat(id, val) {
+    var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
+    registry.set(id + "::pattern_colour_end_sat", val);
+}
+function ui_pattern_colour_interp(id, val) {
+    var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
+    registry.set(id + "::pattern_colour_interp", val);
+}
+
+// --- MIDI TRIGGERS ---
+function ui_midi_trigger_state(id, val) {
+    var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
+    registry.set(id + "::midi_trigger_state", val);
+}
+function ui_midi_trigger_offset(id, val) {
+    var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
+    registry.set(id + "::trigger_offset", val);
+}
+function ui_midi_trigger_rgb(id, r, g, b) {
+    var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
+    registry.set(id + "::midi_trigger_rgb", [r, g, b]);
+}
+function ui_midi_trigger_sat(id, val) {
+    var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
+    registry.set(id + "::midi_trigger_sat", val);
+}
+function ui_midi_trigger_pitch(id, val) {
+    var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
+    registry.set(id + "::midi_trigger_pitch", val);
+}
+function ui_midi_trigger_velocity(id, val) {
+    var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
+    registry.set(id + "::midi_trigger_velocity", val);
+}
+function ui_midi_trigger_duration(id, val) {
+    var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
+    registry.set(id + "::midi_trigger_duration", val);
+}
+
 function set_pinned(id, state) {
     var registry = new Dict("SigneRegistry"); if (registry.contains(id)) registry.set(id + "::pinned", state);
 }
@@ -667,22 +789,22 @@ function group_prop_rgb(propName, r, g, b, a) {
 
 function group_prop_symbol(propName, filename) {
     if (filename === undefined) { filename = propName; propName = "symbol_texture"; }
-    var cleanName = filename.split('/').pop().replace(/\.[^/.]+$/, "");
-    var isPattern = (propName === "pattern_texture");
-    var manifest = new Dict("AtlasManifest");
-    var searchArray = isPattern ? manifest.get("patterns") : manifest.get("symbols");
-    var targetIdx = 0.0;
-    if (searchArray != null) {
-        if (typeof searchArray === "string") searchArray = [searchArray];
-        for (var i = 0; i < searchArray.length; i++) { if (searchArray[i] === cleanName) { targetIdx = i; break; } }
-    }
-    var registryKey = isPattern ? "pat_idx" : "sym_idx";
-    var registry = new Dict("SigneRegistry"); var keys = registry.getkeys();
+    
+    // Make sure we are saving to the correct key depending on the dropdown used
+    var dictKey = (propName === "pattern_texture") ? "pattern_texture" : "symbol_texture";
+    
+    var registry = new Dict("SigneRegistry"); 
+    var keys = registry.getkeys();
     if (keys == null) return;
     if (typeof keys === "string") keys = [keys];
+    
     for (var i = 0; i < keys.length; i++) {
         var id = keys[i];
-        if (registry.get(id + "::selected") == 1) { registry.set(id + "::" + registryKey, targetIdx); outlet(2, "send", id); outlet(2, registryKey, targetIdx); }
+        if (registry.get(id + "::selected") == 1) { 
+            registry.set(id + "::" + dictKey, filename); 
+            outlet(2, "send", id); 
+            outlet(2, dictKey, filename); 
+        }
     }
     mark_dirty(0, 0, 0, 1, 0);
 }
@@ -724,6 +846,8 @@ function draw_selections() {
 // =========================================================
 function update_math() {
     var registry = new Dict("SigneRegistry");
+    var manifest = new Dict("AtlasManifest"); // Moved outside the loop!
+    
     var keys = registry.getkeys();
     
     if (keys == null) {
@@ -752,6 +876,13 @@ function update_math() {
         last_total_instances = total_instances;
     }
 
+    // Fetch the arrays ONCE before the loop starts to save CPU
+    var symArray = manifest.get("symbols");
+    if (symArray != null && typeof symArray === "string") symArray = [symArray];
+    
+    var patArray = manifest.get("patterns");
+    if (patArray != null && typeof patArray === "string") patArray = [patArray];
+
     var current_idx = 0;
     for (var i = 0; i < keys.length; i++) {
         var id = keys[i];
@@ -762,8 +893,32 @@ function update_math() {
 
         var sx = parseFloat(registry.get(id + "::scale_x")); if (isNaN(sx)) sx = 1.0;
         var sy = parseFloat(registry.get(id + "::scale_y")); if (isNaN(sy)) sy = 1.0;
-        var symIdx = parseFloat(registry.get(id + "::sym_idx")) || 0.0;
-        var patIdx = parseFloat(registry.get(id + "::pat_idx")) || 0.0;
+        
+        // --- NESTED FOLDER ATLAS INDEX LOOKUP ---
+        var symIdx = 0.0;
+        var patIdx = 0.0;
+        
+        var symName = registry.get(id + "::symbol_texture");
+        if (symName != null && symArray != null) {
+            // This handles "Geo_Lib/Geo/heart.png" -> "heart"
+            // It splits by '/' OR '\' and takes the last part, then removes the extension
+            var symParts = symName.split(/[\\/]/);
+            var cleanSym = symParts[symParts.length - 1].replace(/\.[^/.]+$/, ""); 
+            
+            for (var s = 0; s < symArray.length; s++) { 
+                if (symArray[s] === cleanSym) { symIdx = parseFloat(s); break; } 
+            }
+        }
+
+        var patName = registry.get(id + "::pattern_texture");
+        if (patName != null && patArray != null) {
+            var patParts = patName.split(/[\\/]/);
+            var cleanPat = patParts[patParts.length - 1].replace(/\.[^/.]+$/, ""); 
+            
+            for (var p = 0; p < patArray.length; p++) { 
+                if (patArray[p] === cleanPat) { patIdx = parseFloat(p); break; } 
+            }
+        }
 
         var opac = parseFloat(registry.get(id + "::opacity")); if (isNaN(opac)) opac = 1.0;
 
@@ -792,4 +947,60 @@ function update_math() {
             current_idx++;
         }
     }
+}
+
+// =========================================================
+// PROPERTIES WINDOW BROADCASTER
+// =========================================================
+function update_properties_window(id) {
+    post("Broadcasting properties for: " + id + "\n");
+    var registry = new Dict("SigneRegistry");
+
+    function push_float(key, rx_name) {
+        var val = registry.get(id + "::" + key);
+        if (val !== null) messnamed(rx_name, parseFloat(val));
+    }
+
+    function push_string(key, rx_name) {
+        var val = registry.get(id + "::" + key);
+        if (val !== null && val !== "") messnamed(rx_name, val);
+    }
+
+    function push_color(key, rx_name) {
+        var val = registry.get(id + "::" + key);
+        if (val !== null) {
+            var r = val[0] !== undefined ? val[0] : 1.0;
+            var g = val[1] !== undefined ? val[1] : 1.0;
+            var b = val[2] !== undefined ? val[2] : 1.0;
+            var a = val[3] !== undefined ? val[3] : 1.0;
+            messnamed(rx_name, r, g, b, a); // Sends list: R G B A
+        }
+    }
+
+    // --- SYMBOL MAPPINGS ---
+    push_color("symbol_colour_start_rgb", "Colour_StartRGB_FromObject");
+    push_float("symbol_colour_start_sat", "Colour_StartSaturation_FromObject");
+    push_color("symbol_colour_end_rgb", "Colour_EndRGB_FromObject");
+    push_float("symbol_colour_end_sat", "Colour_EndSaturation_FromObject");
+    push_float("symbol_colour_interp", "Colour_Interpolation_FromObject");
+    push_string("symbol_texture", "SymbolTexture_FromObject"); // Change string if your receive name is different!
+
+    // --- PATTERN MAPPINGS ---
+    push_color("pattern_colour_start_rgb", "Colour_Pattern_StartRGB_FromObject");
+    push_float("pattern_colour_start_sat", "Colour_Pattern_StartSaturation_FromObject");
+    push_color("pattern_colour_end_rgb", "Colour_Pattern_EndRGB_FromObject");
+    push_float("pattern_colour_end_sat", "Colour_Pattern_EndSaturation_FromObject");
+    push_float("pattern_colour_interp", "PatternColourInterp_FromObject");
+    push_string("pattern_texture", "PatternTexture_FromObject");
+    push_float("pat_tiling_x", "PatternTiling_FromObject");
+    push_float("pattern_intensity", "PatternIntensity_FromObject");
+
+    // --- MIDI MAPPINGS ---
+    push_float("midi_trigger_state", "MIDITriggerStateFromObject");
+    push_color("midi_trigger_rgb", "MIDITrigger_RGB_FromObject");
+    push_float("midi_trigger_sat", "MIDITrigger_Saturation_FromObject");
+    push_float("midi_trigger_pitch", "MIDITrigger_Pitch_FromObject");
+    push_float("midi_trigger_velocity", "MIDITrigger_Velocity_FromObject");
+    push_float("trigger_offset", "MIDITrigger_Offset_FromObject");
+    push_float("midi_trigger_duration", "MIDITrigger_Duration_FromObject");
 }
