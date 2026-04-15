@@ -17,6 +17,9 @@ var winW = 1920, winH = 1080, curX = 0, curY = 0;
 var a2x = 0, a2y = 0, c2x = 0, c2y = 0, a3x = 0, a3y = 0, c3x = 0, c3y = 0;
 var groupCx = 0, groupCy = 0, lastCamX = 0, lastCamY = 0, camInitialized = false;
 
+// GLOBAL LIVE API OBJECT (Centralized to save memory)
+var liveViewAPI = null;
+
 // =========================================================
 // GPU MATRICES (SHARED GLOBAL MEMORY BINDING)
 // =========================================================
@@ -47,20 +50,34 @@ function mark_dirty(pos, sym, pat, scl, til) {
     needs_recalc = true;
 }
 
-// THIS IS THE ONLY GPU TRIGGER - DRIVEN BY QMETRO
 function bang() {
     if (needs_recalc) {
         update_math();
         needs_recalc = false;
     }
-
-    // Blast all dirty buffers out simultaneously!
-    // Since they are now on separate inlets, Jitter will process them correctly in one frame.
     if (dirty_pos) { outlet(5, "bang"); dirty_pos = false; }
     if (dirty_sym) { outlet(6, "bang"); dirty_sym = false; }
     if (dirty_pat) { outlet(7, "bang"); dirty_pat = false; }
     if (dirty_scl) { outlet(8, "bang"); dirty_scl = false; }
     if (dirty_til) { outlet(9, "bang"); dirty_til = false; }
+}
+
+// =========================================================
+// ABLETON LIVE API FOCUS LOGIC
+// =========================================================
+function focus_live_device(id) {
+    var registry = new Dict("SigneRegistry");
+    var track_id = registry.get(id + "::live_track_id");
+    var device_id = registry.get(id + "::live_device_id");
+    
+    if (track_id != null && device_id != null) {
+        if (!liveViewAPI) {
+            liveViewAPI = new LiveAPI(null, "live_set view");
+        }
+        // First select the track, then the specific device
+        liveViewAPI.set("selected_track", "id", parseInt(track_id));
+        liveViewAPI.call("select_device", "id", parseInt(device_id));
+    }
 }
 
 // =========================================================
@@ -197,6 +214,9 @@ function picker_hit(target, state) {
                     }
                 }
                 outlet(2, "send", mathHitID); outlet(2, "selected_via_mouse", 1);
+                
+                // CALLING THE NEW LIVE FOCUS FUNCTION
+                focus_live_device(mathHitID);
                 
                 if (isODown === 1) isAdjustingOpacityGroup = true;
                 else if (isAltDown === 1) isScalingGroup = true;
@@ -347,7 +367,7 @@ function update_group_rotation() {
         }
     }
     draw_selections();
-    mark_dirty(1, 0, 0, 0, 0); // Pos dirty (Rotation is stored in Pos matrix)
+    mark_dirty(1, 0, 0, 0, 0); // Pos dirty
 }
 
 function update_group_opacity() {
@@ -366,7 +386,7 @@ function update_group_opacity() {
         }
     }
     draw_selections();
-    mark_dirty(0, 1, 1, 0, 0); // Opacity is stored in Sym and Pat color matrices
+    mark_dirty(0, 1, 1, 0, 0); 
 }
 
 function release_selection() {
@@ -400,6 +420,9 @@ function release_selection() {
         var id = keys[i]; var isSelected = registry.get(id + "::selected");
         outlet(2, "send", id); outlet(2, "selected", isSelected); 
         outlet(2, "selected_via_mouse", (id === leftmostID) ? 1 : 0);
+        
+        // Ensure Live focus updates on marquee release for the leftmost selected object
+        if (id === leftmostID) focus_live_device(id);
     }
     draw_selections();
     mark_dirty(1, 1, 1, 1, 1); 
