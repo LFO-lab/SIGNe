@@ -844,6 +844,12 @@ function draw_selections() {
 // =========================================================
 // THE HARDWARE INSTANCING MATH
 // =========================================================
+function lerp(start, end, amt) {
+    return (1.0 - amt) * start + amt * end;
+}
+
+// -----------------------------------------------------------
+
 function update_math() {
     var registry = new Dict("SigneRegistry");
     var manifest = new Dict("AtlasManifest"); // Moved outside the loop!
@@ -900,8 +906,6 @@ function update_math() {
         
         var symName = registry.get(id + "::symbol_texture");
         if (symName != null && symArray != null) {
-            // This handles "Geo_Lib/Geo/heart.png" -> "heart"
-            // It splits by '/' OR '\' and takes the last part, then removes the extension
             var symParts = symName.split(/[\\/]/);
             var cleanSym = symParts[symParts.length - 1].replace(/\.[^/.]+$/, ""); 
             
@@ -920,30 +924,52 @@ function update_math() {
             }
         }
 
+        // --- FETCH OPACITY AND COLOUR DATA ---
         var opac = parseFloat(registry.get(id + "::opacity")); if (isNaN(opac)) opac = 1.0;
 
-        var sr=1.0, sg=1.0, sb=1.0, sa=1.0;
-        var symCol = registry.get(id + "::symbol_colour_start_rgb");
-        if (symCol != null) { sr = symCol[0]; sg = symCol[1]; sb = symCol[2]; sa = (symCol.length > 3) ? symCol[3] : 1.0; }
-        sa *= opac; 
+        // Symbol Colours & Interp
+        var sStart = registry.get(id + "::symbol_colour_start_rgb") || [1.0, 1.0, 1.0, 1.0];
+        var sEnd = registry.get(id + "::symbol_colour_end_rgb") || [1.0, 1.0, 1.0, 1.0];
+        var sInterp = parseFloat(registry.get(id + "::symbol_colour_interp")); if (isNaN(sInterp)) sInterp = 0.0;
 
-        var pr=0.0, pg=0.0, pb=0.0, pa=0.0; 
-        var patCol = registry.get(id + "::pattern_colour_start_rgb");
-        if (patCol != null) { pr = patCol[0]; pg = patCol[1]; pb = patCol[2]; pa = (patCol.length > 3) ? patCol[3] : 1.0; }
-        pa *= opac;
+        // Pattern Colours & Interp
+        var pStart = registry.get(id + "::pattern_colour_start_rgb") || [0.0, 0.0, 0.0, 1.0];
+        var pEnd = registry.get(id + "::pattern_colour_end_rgb") || [0.0, 0.0, 0.0, 1.0];
+        var pInterp = parseFloat(registry.get(id + "::pattern_colour_interp")); if (isNaN(pInterp)) pInterp = 0.0;
 
-        var tx = parseFloat(registry.get(id + "::pat_tiling_x")) || 1.0, ty = parseFloat(registry.get(id + "::pat_tiling_y")) || 1.0;
+        // Calculate Interpolated Symbol Colour
+        var sr = lerp(sStart[0], sEnd[0], sInterp);
+        var sg = lerp(sStart[1], sEnd[1], sInterp);
+        var sb = lerp(sStart[2], sEnd[2], sInterp);
+        var sa = lerp(sStart[3] !== undefined ? sStart[3] : 1.0, sEnd[3] !== undefined ? sEnd[3] : 1.0, sInterp) * opac;
+
+        // Calculate Interpolated Pattern Colour
+        var pr = lerp(pStart[0], pEnd[0], pInterp);
+        var pg = lerp(pStart[1], pEnd[1], pInterp);
+        var pb = lerp(pStart[2], pEnd[2], pInterp);
+        var pa = lerp(pStart[3] !== undefined ? pStart[3] : 1.0, pEnd[3] !== undefined ? pEnd[3] : 1.0, pInterp) * opac;
+
+        // Layout Parameters
+        var tx = parseFloat(registry.get(id + "::pat_tiling_x")) || 1.0; 
+        var ty = parseFloat(registry.get(id + "::pat_tiling_y")) || 1.0;
+        var pIntensity = parseFloat(registry.get(id + "::pattern_intensity")); if (isNaN(pIntensity)) pIntensity = 0.0;
+        
         var count = parseInt(registry.get(id + "::count")) || 1, spacing = parseFloat(registry.get(id + "::spacing")) || 0.0;
         var gRot = parseFloat(registry.get(id + "::group_rot")) || 0.0;
         var gCos = Math.cos(-gRot * 2.0 * Math.PI), gSin = Math.sin(-gRot * 2.0 * Math.PI);
 
+        // --- GENERATE MATRICES ---
         for (var j = 0; j < count; j++) {
             var ix = bx + (j * spacing * gCos), iy = by + (j * spacing * gSin);
+            
             matPos.setcell1d(current_idx, ix, iy, layer, rotRadians);
             matSym.setcell1d(current_idx, sr, sg, sb, sa);
             matPat.setcell1d(current_idx, pr, pg, pb, pa);
             matScl.setcell1d(current_idx, sx, sy, symIdx, patIdx);
-            matTil.setcell1d(current_idx, tx, ty, 0.0);
+            
+            // Output Tiling X, Tiling Y, and Pattern Intensity into normal buffer
+            matTil.setcell1d(current_idx, tx, ty, pIntensity);
+            
             current_idx++;
         }
     }
