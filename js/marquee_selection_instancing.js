@@ -202,7 +202,7 @@ function get_hit_object(px, py) {
             var cosT = Math.cos(-rad), sinT = Math.sin(-rad);
             var localX = (dx * cosT) - (dy * sinT), localY = (dx * sinT) + (dy * cosT);
             if (Math.abs(localX) <= sx && Math.abs(localY) <= sy) {
-                if (layer > highestLayer) { highestLayer = layer; hitID = id; }
+                if (layer >= highestLayer) { highestLayer = layer; hitID = id; }
             }
         }
     }
@@ -908,6 +908,28 @@ function update_math() {
     }
     
     if (typeof keys === "string") keys = [keys];
+
+    // ==========================================
+    // --- FILTER OUT NON-SYMBOLS (e.g., SIGNe-Text) ---
+    // ==========================================
+    var valid_symbols = [];
+    for (var i = 0; i < keys.length; i++) {
+        // Only objects that have a 'symbol_texture' property will be instanced by this mesh
+        if (registry.contains(keys[i] + "::symbol_texture")) {
+            valid_symbols.push(keys[i]);
+        }
+    }
+    keys = valid_symbols; // Overwrite the keys array with ONLY symbols
+    
+    // Safety check: If there are no symbols left (e.g., only Text objects exist)
+    if (keys.length === 0) {
+        if (last_total_instances !== 1) {
+            matPos.dim = 1; matSym.dim = 1; matPat.dim = 1; matScl.dim = 1; matTil.dim = 1;
+            last_total_instances = 1;
+        }
+        matScl.setcell1d(0, 0, 0, 0, 0); 
+        return; // Stop math execution here!
+    }
 
     // ==========================================
     // --- SORT INSTANCES BY LAYER ---
