@@ -760,6 +760,47 @@ function ui_midi_trigger_duration(id, val) {
     registry.set(id + "::midi_trigger_duration", val);
 }
 
+// --- TEXT PROPERTIES ---
+function ui_text_italic(id, val) {
+    var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
+    registry.set(id + "::text_italic", val);
+}
+
+function ui_text_bold(id, val) {
+    var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
+    registry.set(id + "::text_bold", val);
+}
+
+function ui_text_spacing(id, val) {
+    var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
+    registry.set(id + "::text_spacing", val);
+}
+
+function ui_text_alignment(id, val) {
+    var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
+    registry.set(id + "::text_alignment", val);
+}
+
+// Fonts and Text Content can have spaces (e.g., "Courier New" or "Hello World"), 
+// so we need to grab all arguments and join them back into a single string.
+function ui_text_font() {
+    var args = arrayfromargs(arguments);
+    var id = args[0];
+    var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
+    
+    var fontName = args.slice(1).join(" ");
+    registry.set(id + "::text_font", fontName);
+}
+
+function ui_text_content() {
+    var args = arrayfromargs(arguments);
+    var id = args[0];
+    var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
+    
+    var textContent = args.slice(1).join(" ");
+    registry.set(id + "::text_content", textContent);
+}
+
 function set_pinned(id, state) {
     var registry = new Dict("SigneRegistry"); if (registry.contains(id)) registry.set(id + "::pinned", state);
 }
@@ -980,7 +1021,7 @@ function update_math() {
         var id = keys[i];
         
         var bx = parseFloat(registry.get(id + "::x")) || 0.0, by = parseFloat(registry.get(id + "::y")) || 0.0;
-        var layer = (parseFloat(registry.get(id + "::layer")) || 0.0) * 0.001;
+        var layer = (parseFloat(registry.get(id + "::layer")) || 0.0) * 0.01;
         var rotRadians = (parseFloat(registry.get(id + "::rotation")) || 0.0) * 2.0 * Math.PI;
 
         var sx = parseFloat(registry.get(id + "::scale_x")); if (isNaN(sx)) sx = 1.0;
@@ -1126,4 +1167,14 @@ function update_properties_window(id) {
     push_float("midi_trigger_velocity", "MIDITrigger_Velocity_FromObject");
     push_float("trigger_offset", "MIDITrigger_Offset_FromObject");
     push_float("midi_trigger_duration", "MIDITrigger_Duration_FromObject");
+
+    // --- TEXT MAPPINGS ---
+    push_float("text_italic", "TextItalic_FromObject");
+    push_float("text_bold", "TextBold_FromObject");
+    push_float("text_spacing", "TextSpacing_FromObject");
+    push_float("text_alignment", "TextAlignment_FromObject");
+    push_float("bounds_x", "TextBoundsX_FromObject");
+    push_float("bounds_y", "TextBoundsY_FromObject");
+    push_string("text_font", "TextFont_FromObject");
+    push_string("text_content", "TextContent_FromObject");
 }
