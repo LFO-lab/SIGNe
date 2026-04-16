@@ -623,8 +623,7 @@ function ui_symbol_colour_start_sat(id, val) {
 }
 
 function ui_symbol_colour_end_rgb() {
-    var args = arrayfromargs(arguments);
-    var id = args[0];
+    var args = arrayfromargs(arguments); var id = args[0];
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     registry.set(id + "::symbol_colour_end_rgb", args.slice(1)); 
     mark_dirty(0, 1, 0, 0, 0);
@@ -636,7 +635,8 @@ function ui_symbol_colour_end_sat(id, val) {
 }
 function ui_symbol_colour_interp(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
-    registry.set(id + "::symbol_colour_interp", val);
+    registry.set(id + "::symbol_colour_interp", val); 
+    mark_dirty(0, 1, 0, 0, 0); // This tells the GPU to redraw!
 }
 
 // --- PATTERN COLOUR, TEXTURE & TILING ---
@@ -651,6 +651,7 @@ function ui_pattern_tiling(id, val) {
 function ui_pattern_intensity(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     registry.set(id + "::pattern_intensity", val); 
+    mark_dirty(0, 0, 1, 0, 0);
 }
 
 function ui_pattern_colour_start_rgb() {
@@ -667,8 +668,7 @@ function ui_pattern_colour_start_sat(id, val) {
 }
 
 function ui_pattern_colour_end_rgb() {
-    var args = arrayfromargs(arguments);
-    var id = args[0];
+    var args = arrayfromargs(arguments); var id = args[0];
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     registry.set(id + "::pattern_colour_end_rgb", args.slice(1)); 
     mark_dirty(0, 0, 1, 0, 0);
@@ -680,7 +680,8 @@ function ui_pattern_colour_end_sat(id, val) {
 }
 function ui_pattern_colour_interp(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
-    registry.set(id + "::pattern_colour_interp", val);
+    registry.set(id + "::pattern_colour_interp", val); 
+    mark_dirty(0, 0, 1, 0, 0);
 }
 
 // --- MIDI TRIGGERS ---
