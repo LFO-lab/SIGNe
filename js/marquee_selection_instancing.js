@@ -135,6 +135,43 @@ function true_wrap(val, max) {
     return v;
 }
 
+function apply_sat(r, g, b, sat) {
+    var max = Math.max(r, g, b), min = Math.min(r, g, b);
+    var h, s, l = (max + min) / 2.0;
+
+    if (max === min) { h = s = 0; } // achromatic
+    else {
+        var d = max - min;
+        s = l > 0.5 ? d / (2.0 - max - min) : d / (max + min);
+        if (max === r) h = (g - b) / d + (g < b ? 6.0 : 0.0);
+        else if (max === g) h = (b - r) / d + 2.0;
+        else h = (r - g) / d + 4.0;
+        h /= 6.0;
+    }
+    
+    // Override the native saturation with our dial's value
+    s = Math.max(0.0, Math.min(1.0, sat));
+
+    var hue2rgb = function(p, q, t) {
+        if (t < 0.0) t += 1.0;
+        if (t > 1.0) t -= 1.0;
+        if (t < 1.0/6.0) return p + (q - p) * 6.0 * t;
+        if (t < 1.0/2.0) return q;
+        if (t < 2.0/3.0) return p + (q - p) * (2.0/3.0 - t) * 6.0;
+        return p;
+    };
+
+    if (s === 0.0) { r = g = b = l; } // Grayscale
+    else {
+        var q = l < 0.5 ? l * (1.0 + s) : l + s - l * s;
+        var p = 2.0 * l - q;
+        r = hue2rgb(p, q, h + 1.0/3.0);
+        g = hue2rgb(p, q, h);
+        b = hue2rgb(p, q, h - 1.0/3.0);
+    }
+    return [r, g, b];
+}
+
 // =========================================================
 // PURE MATH RAYCASTING
 // =========================================================
@@ -619,7 +656,7 @@ function ui_symbol_colour_start_rgb() {
 function ui_symbol_colour_start_sat(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     registry.set(id + "::symbol_colour_start_sat", val); 
-    // Saturation logic will be handled later in master patch colour rendering
+    mark_dirty(0, 1, 0, 0, 0); // Triggers Symbol Matrix redraw
 }
 
 function ui_symbol_colour_end_rgb() {
@@ -631,8 +668,10 @@ function ui_symbol_colour_end_rgb() {
 
 function ui_symbol_colour_end_sat(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
-    registry.set(id + "::symbol_colour_end_sat", val);
+    registry.set(id + "::symbol_colour_end_sat", val); 
+    mark_dirty(0, 1, 0, 0, 0); 
 }
+
 function ui_symbol_colour_interp(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     registry.set(id + "::symbol_colour_interp", val); 
@@ -664,7 +703,8 @@ function ui_pattern_colour_start_rgb() {
 
 function ui_pattern_colour_start_sat(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
-    registry.set(id + "::pattern_colour_start_sat", val);
+    registry.set(id + "::pattern_colour_start_sat", val); 
+    mark_dirty(0, 0, 1, 0, 0); // Triggers Pattern Matrix redraw
 }
 
 function ui_pattern_colour_end_rgb() {
@@ -676,7 +716,8 @@ function ui_pattern_colour_end_rgb() {
 
 function ui_pattern_colour_end_sat(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
-    registry.set(id + "::pattern_colour_end_sat", val);
+    registry.set(id + "::pattern_colour_end_sat", val); 
+    mark_dirty(0, 0, 1, 0, 0); 
 }
 function ui_pattern_colour_interp(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
@@ -928,33 +969,44 @@ function update_math() {
         // --- FETCH OPACITY AND COLOUR DATA ---
         var opac = parseFloat(registry.get(id + "::opacity")); if (isNaN(opac)) opac = 1.0;
 
-        // Symbol Colours & Interp
+        // Fetch Base RGBs
         var sStart = registry.get(id + "::symbol_colour_start_rgb") || [1.0, 1.0, 1.0, 1.0];
         var sEnd = registry.get(id + "::symbol_colour_end_rgb") || [1.0, 1.0, 1.0, 1.0];
-        var sInterp = parseFloat(registry.get(id + "::symbol_colour_interp")); if (isNaN(sInterp)) sInterp = 0.0;
-
-        // Pattern Colours & Interp
         var pStart = registry.get(id + "::pattern_colour_start_rgb") || [0.0, 0.0, 0.0, 1.0];
         var pEnd = registry.get(id + "::pattern_colour_end_rgb") || [0.0, 0.0, 0.0, 1.0];
+
+        // Fetch Saturations
+        var sStartSat = parseFloat(registry.get(id + "::symbol_colour_start_sat")); if (isNaN(sStartSat)) sStartSat = 1.0;
+        var sEndSat = parseFloat(registry.get(id + "::symbol_colour_end_sat")); if (isNaN(sEndSat)) sEndSat = 1.0;
+        var pStartSat = parseFloat(registry.get(id + "::pattern_colour_start_sat")); if (isNaN(pStartSat)) pStartSat = 1.0;
+        var pEndSat = parseFloat(registry.get(id + "::pattern_colour_end_sat")); if (isNaN(pEndSat)) pEndSat = 1.0;
+        
+        // Fetch Interpolation
+        var sInterp = parseFloat(registry.get(id + "::symbol_colour_interp")); if (isNaN(sInterp)) sInterp = 0.0;
         var pInterp = parseFloat(registry.get(id + "::pattern_colour_interp")); if (isNaN(pInterp)) pInterp = 0.0;
 
-        // Calculate Interpolated Symbol Colour
-        var sr = lerp(sStart[0], sEnd[0], sInterp);
-        var sg = lerp(sStart[1], sEnd[1], sInterp);
-        var sb = lerp(sStart[2], sEnd[2], sInterp);
+        // Apply Saturation to the RGBs
+        var sStartRGB = apply_sat(sStart[0], sStart[1], sStart[2], sStartSat);
+        var sEndRGB = apply_sat(sEnd[0], sEnd[1], sEnd[2], sEndSat);
+        var pStartRGB = apply_sat(pStart[0], pStart[1], pStart[2], pStartSat);
+        var pEndRGB = apply_sat(pEnd[0], pEnd[1], pEnd[2], pEndSat);
+
+        // Calculate Interpolated Final Colours
+        var sr = lerp(sStartRGB[0], sEndRGB[0], sInterp);
+        var sg = lerp(sStartRGB[1], sEndRGB[1], sInterp);
+        var sb = lerp(sStartRGB[2], sEndRGB[2], sInterp);
         var sa = lerp(sStart[3] !== undefined ? sStart[3] : 1.0, sEnd[3] !== undefined ? sEnd[3] : 1.0, sInterp) * opac;
 
-        // Calculate Interpolated Pattern Colour
-        var pr = lerp(pStart[0], pEnd[0], pInterp);
-        var pg = lerp(pStart[1], pEnd[1], pInterp);
-        var pb = lerp(pStart[2], pEnd[2], pInterp);
+        var pr = lerp(pStartRGB[0], pEndRGB[0], pInterp);
+        var pg = lerp(pStartRGB[1], pEndRGB[1], pInterp);
+        var pb = lerp(pStartRGB[2], pEndRGB[2], pInterp);
         var pa = lerp(pStart[3] !== undefined ? pStart[3] : 1.0, pEnd[3] !== undefined ? pEnd[3] : 1.0, pInterp) * opac;
 
         // Layout Parameters
         var tx = parseFloat(registry.get(id + "::pat_tiling_x")) || 1.0; 
         var ty = parseFloat(registry.get(id + "::pat_tiling_y")) || 1.0;
         var pIntensity = parseFloat(registry.get(id + "::pattern_intensity")); if (isNaN(pIntensity)) pIntensity = 0.0;
-        
+                
         var count = parseInt(registry.get(id + "::count")) || 1, spacing = parseFloat(registry.get(id + "::spacing")) || 0.0;
         var gRot = parseFloat(registry.get(id + "::group_rot")) || 0.0;
         var gCos = Math.cos(-gRot * 2.0 * Math.PI), gSin = Math.sin(-gRot * 2.0 * Math.PI);
