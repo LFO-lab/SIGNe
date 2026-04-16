@@ -135,6 +135,10 @@ function true_wrap(val, max) {
     return v;
 }
 
+function lerp(start, end, amt) {
+    return (1.0 - amt) * start + amt * end;
+}
+
 function apply_sat(r, g, b, sat) {
     var max = Math.max(r, g, b), min = Math.min(r, g, b);
     var h, s, l = (max + min) / 2.0;
@@ -636,7 +640,8 @@ function ui_bounds_y(id, val) {
 // --- POSITION / SCALE / LAYER ---
 function ui_layer(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
-    registry.set(id + "::layer", val); mark_dirty(1, 0, 0, 0, 0);
+    registry.set(id + "::layer", val); 
+    mark_dirty(1, 1, 1, 1, 1); // Force a full GPU redraw!
 }
 
 // --- SYMBOL COLOUR & TEXTURE ---
@@ -886,15 +891,10 @@ function draw_selections() {
 // =========================================================
 // THE HARDWARE INSTANCING MATH
 // =========================================================
-function lerp(start, end, amt) {
-    return (1.0 - amt) * start + amt * end;
-}
-
-// -----------------------------------------------------------
 
 function update_math() {
     var registry = new Dict("SigneRegistry");
-    var manifest = new Dict("AtlasManifest"); // Moved outside the loop!
+    var manifest = new Dict("AtlasManifest"); 
     
     var keys = registry.getkeys();
     
@@ -908,6 +908,28 @@ function update_math() {
     }
     
     if (typeof keys === "string") keys = [keys];
+
+    // ==========================================
+    // --- SORT INSTANCES BY LAYER ---
+    // ==========================================
+    var sortArray = [];
+    for (var i = 0; i < keys.length; i++) {
+        var l = parseFloat(registry.get(keys[i] + "::layer"));
+        if (isNaN(l)) l = 0.0;
+        sortArray.push({ id: keys[i], layer: l });
+    }
+
+    // Sort ascending: Lower layer values get drawn first (background)
+    // Higher layer values get drawn last (foreground)
+    sortArray.sort(function(a, b) {
+        return a.layer - b.layer;
+    });
+
+    // Replace the 'keys' array with sorted IDs
+    for (var i = 0; i < sortArray.length; i++) {
+        keys[i] = sortArray[i].id;
+    }
+    // ==========================================
 
     var total_instances = 0;
     for (var i = 0; i < keys.length; i++) {
