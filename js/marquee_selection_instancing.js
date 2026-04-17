@@ -1179,6 +1179,11 @@ function update_properties_window(id) {
     post("Broadcasting properties for: " + id + "\n");
     var registry = new Dict("SigneRegistry");
 
+    // --- TELL PROPERTIES WINDOW WHICH UI TO SHOW ---
+    // Check if the object has text properties. If yes, output 1. If no, output 0.
+    var isText = registry.contains(id + "::text_content") ? 1 : 0;
+    messnamed("SelectedObjectIsText", isText);
+
     function push_float(key, rx_name) {
         var val = registry.get(id + "::" + key);
         if (val !== null) messnamed(rx_name, parseFloat(val));
