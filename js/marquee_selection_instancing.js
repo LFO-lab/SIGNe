@@ -199,7 +199,7 @@ function get_hit_object(px, py) {
             var ix = objX + (j * spacing * gCos), iy = objY + (j * spacing * gSin);
             var dx = px - ix, dy = py - iy;
             var rad = (rot + gRot) * 2.0 * Math.PI;
-            var cosT = Math.cos(-rad), sinT = Math.sin(-rad);
+            var cosT = Math.cos(rad), sinT = Math.sin(rad); // Positive rad for inverse rotation!
             var localX = (dx * cosT) - (dy * sinT), localY = (dx * sinT) + (dy * cosT);
             if (Math.abs(localX) <= sx && Math.abs(localY) <= sy) {
                 if (layer >= highestLayer) { highestLayer = layer; hitID = id; }
@@ -439,23 +439,72 @@ function release_selection() {
     var keys = registry.getkeys();
     if (keys == null) return;
     if (typeof keys === "string") keys = [keys];
+    
     var leftmostID = null, leftmostX = Infinity;
+    
     for (var i = 0; i < keys.length; i++) {
-        var id = keys[i], isSelected = 0, objX = registry.get(id + "::x"), objY = registry.get(id + "::y");
-		var sx = registry.get(id + "::bounds_x"); if (sx == null) sx = registry.get(id + "::scale_x") || 0.0;
+        var id = keys[i];
+        var isSelected = 0;
+        var objX = registry.get(id + "::x"), objY = registry.get(id + "::y");
+        var sx = registry.get(id + "::bounds_x"); if (sx == null) sx = registry.get(id + "::scale_x") || 0.0;
         var sy = registry.get(id + "::bounds_y"); if (sy == null) sy = registry.get(id + "::scale_y") || 0.0;
-        var count = registry.get(id + "::count") || 1, spacing = registry.get(id + "::spacing") || 0.0;
-        var gRad = -(registry.get(id + "::group_rot") || 0.0) * (Math.PI * 2.0);
+        var rot = registry.get(id + "::rotation") || 0.0;
+        var gRot = registry.get(id + "::group_rot") || 0.0;
+        var count = registry.get(id + "::count") || 1;
+        var spacing = registry.get(id + "::spacing") || 0.0;
+
+        // Math for the instance offset positioning
+        var gRad = -gRot * (Math.PI * 2.0);
         var gCosT = Math.cos(gRad), gSinT = Math.sin(gRad);
+
+        // Math for the object's visual rotation
+        var drawRad = -(rot + gRot) * 2.0 * Math.PI;
+        var cosT = Math.cos(drawRad), sinT = Math.sin(drawRad);
+
+        // Math for the inverse raycast
+        var invRad = (rot + gRot) * 2.0 * Math.PI;
+        var invCos = Math.cos(invRad), invSin = Math.sin(invRad);
+
         for (var j = 0; j < count; j++) {
             var ix = objX + (j * spacing * gCosT), iy = objY + (j * spacing * gSinT);
-            if (minX <= ix+sx && maxX >= ix-sx && minY <= iy+sy && maxY >= iy-sy) {
-                isSelected = 1; if (objX < leftmostX) { leftmostX = objX; leftmostID = id; } break; 
+
+            // Calculate the 4 corners of the rotated object
+            var p1x = ix + (-sx*cosT - sy*sinT), p1y = iy + (-sx*sinT + sy*cosT);
+            var p2x = ix + ( sx*cosT - sy*sinT), p2y = iy + ( sx*sinT + sy*cosT);
+            var p3x = ix + ( sx*cosT + sy*sinT), p3y = iy + ( sx*sinT - sy*cosT);
+            var p4x = ix + (-sx*cosT + sy*sinT), p4y = iy + (-sx*sinT - sy*cosT);
+
+            var hit = false;
+            
+            // Test 1: Is the center inside the marquee?
+            if (ix >= minX && ix <= maxX && iy >= minY && iy <= maxY) hit = true;
+            // Test 2: Are any object corners inside the marquee?
+            else if (p1x >= minX && p1x <= maxX && p1y >= minY && p1y <= maxY) hit = true;
+            else if (p2x >= minX && p2x <= maxX && p2y >= minY && p2y <= maxY) hit = true;
+            else if (p3x >= minX && p3x <= maxX && p3y >= minY && p3y <= maxY) hit = true;
+            else if (p4x >= minX && p4x <= maxX && p4y >= minY && p4y <= maxY) hit = true;
+            else {
+                // Test 3: Are any marquee corners inside the object? (Inverse rotation test)
+                var mqC = [[minX, minY], [maxX, minY], [maxX, maxY], [minX, maxY]];
+                for(var c = 0; c < 4; c++) {
+                    var dx = mqC[c][0] - ix, dy = mqC[c][1] - iy;
+                    var lx = (dx * invCos) - (dy * invSin);
+                    var ly = (dx * invSin) + (dy * invCos);
+                    if (Math.abs(lx) <= sx && Math.abs(ly) <= sy) { hit = true; break; }
+                }
+            }
+
+            if (hit) {
+                isSelected = 1; 
+                if (objX < leftmostX) { leftmostX = objX; leftmostID = id; } 
+                break; 
             }
         }
+        
         registry.set(id + "::selected", isSelected);
         outlet(4, id, (id === leftmostID) ? 1 : 0);
     }
+    
     for (var i = 0; i < keys.length; i++) {
         var id = keys[i]; var isSelected = registry.get(id + "::selected");
         outlet(2, "send", id); outlet(2, "selected", isSelected); 
@@ -779,6 +828,16 @@ function ui_text_spacing(id, val) {
 function ui_text_alignment(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     registry.set(id + "::text_alignment", val);
+}
+
+function ui_base_bounds_x(id, val) {
+    var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
+    registry.set(id + "::base_bounds_x", val);
+}
+
+function ui_base_bounds_y(id, val) {
+    var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
+    registry.set(id + "::base_bounds_y", val);
 }
 
 // Fonts and Text Content can have spaces (e.g., "Courier New" or "Hello World"), 
@@ -1173,8 +1232,8 @@ function update_properties_window(id) {
     push_float("text_bold", "TextBold_FromObject");
     push_float("text_spacing", "TextSpacing_FromObject");
     push_float("text_alignment", "TextAlignment_FromObject");
-    push_float("bounds_x", "TextBoundsX_FromObject");
-    push_float("bounds_y", "TextBoundsY_FromObject");
+    push_float("base_bounds_x", "TextBoundsX_FromObject");
+    push_float("base_bounds_y", "TextBoundsY_FromObject");
     push_string("text_font", "TextFont_FromObject");
     push_string("text_content", "TextContent_FromObject");
 }
