@@ -860,6 +860,38 @@ function ui_text_content() {
     registry.set(id + "::text_content", textContent);
 }
 
+// --- SYMBOL & PATTERN UI STATE ---
+function ui_symbol_library() {
+    var args = arrayfromargs(arguments); var id = args[0];
+    var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
+    registry.set(id + "::symbol_library", args.slice(1).join(" "));
+}
+function ui_symbol_category() {
+    var args = arrayfromargs(arguments); var id = args[0];
+    var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
+    registry.set(id + "::symbol_category", args.slice(1).join(" "));
+}
+function ui_symbol_index(id, val) {
+    var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
+    registry.set(id + "::symbol_index", val);
+    post("DICT SAVED: Index " + val + " for " + id + "\n"); // <-- ADD THIS
+}
+
+function ui_pattern_library() {
+    var args = arrayfromargs(arguments); var id = args[0];
+    var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
+    registry.set(id + "::pattern_library", args.slice(1).join(" "));
+}
+function ui_pattern_category() {
+    var args = arrayfromargs(arguments); var id = args[0];
+    var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
+    registry.set(id + "::pattern_category", args.slice(1).join(" "));
+}
+function ui_pattern_index(id, val) {
+    var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
+    registry.set(id + "::pattern_index", val);
+}
+
 function set_pinned(id, state) {
     var registry = new Dict("SigneRegistry"); if (registry.contains(id)) registry.set(id + "::pinned", state);
 }
@@ -1179,6 +1211,9 @@ function update_properties_window(id) {
     post("Broadcasting properties for: " + id + "\n");
     var registry = new Dict("SigneRegistry");
 
+    // --- Tell the Properties Window the target's name ---
+    messnamed("SelectedObjectName", id);
+
     // --- TELL PROPERTIES WINDOW WHICH UI TO SHOW ---
     // Check if the object has text properties. If yes, output 1. If no, output 0.
     var isText = registry.contains(id + "::text_content") ? 1 : 0;
@@ -1212,6 +1247,10 @@ function update_properties_window(id) {
     push_float("symbol_colour_end_sat", "Colour_EndSaturation_FromObject");
     push_float("symbol_colour_interp", "Colour_Interpolation_FromObject");
     push_string("symbol_texture", "SymbolTexture_FromObject"); // Change string if your receive name is different!
+    post("DICT PUSHING: Index " + registry.get(id + "::symbol_index") + "\n"); // <-- ADD THIS
+    push_string("symbol_library", "ObjectLibraryFolderName_FromSymbol");
+    push_string("symbol_category", "ObjectCategoryFolderName_FromSymbol");
+    push_float("symbol_index", "SelectedObjectIndex_FromSymbol");
 
     // --- PATTERN MAPPINGS ---
     push_color("pattern_colour_start_rgb", "Colour_Pattern_StartRGB_FromObject");
@@ -1222,6 +1261,9 @@ function update_properties_window(id) {
     push_string("pattern_texture", "PatternTexture_FromObject");
     push_float("pat_tiling_x", "PatternTiling_FromObject");
     push_float("pattern_intensity", "PatternIntensity_FromObject");
+    push_string("pattern_library", "PatternLibraryFolderName_FromSymbol");
+    push_string("pattern_category", "PatternCategoryFolderName_FromSymbol");
+    push_float("pattern_index", "SelectedPatternIndex_FromSymbol");
 
     // --- MIDI MAPPINGS ---
     push_float("midi_trigger_state", "MIDITriggerStateFromObject");
