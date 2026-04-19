@@ -608,6 +608,32 @@ function release_selection() {
 // =========================================================
 // UI INTERACTIONS 
 // =========================================================
+// --- DROP NEW OBJECT AT PLAYHEAD ---
+function drop_new_object(id) {
+    var api = new LiveAPI(null, "live_set");
+    if (!api) return;
+    
+    var num = parseFloat(api.get("signature_numerator")[0]);
+    var den = parseFloat(api.get("signature_denominator")[0]);
+    var beatsPerBar = (num / den) * 4.0;
+    var beats = parseFloat(api.get("current_song_time")[0]);
+    
+    // Calculate current bar and add 2-bar drop offset
+    var bars = (beats / beatsPerBar) + 1.0;
+    var dropX = snap(bars + 2.0, quantX);
+
+    var registry = new Dict("SigneRegistry");
+    if (!registry.contains(id)) return;
+
+    // Update the registry and tell the UI dial to move
+    registry.set(id + "::x", dropX);
+    outlet(2, "send", id);
+    outlet(2, "move_x", dropX);
+    
+    draw_selections();
+    mark_dirty(1, 0, 0, 0, 0);
+}
+
 function remove(id) {
     var registry = new Dict("SigneRegistry");
     if (registry.contains(id)) registry.remove(id);
@@ -647,7 +673,7 @@ function ui_select(target) {
     draw_selections();
 }
 
-// THE NEW LIVE UI REVERSE-LOOKUP FUNCTION
+// LIVE UI REVERSE-LOOKUP FUNCTION
 function live_device_selected(device_id) {
     if (isScrubbing) return;
     var registry = new Dict("SigneRegistry");
@@ -788,7 +814,7 @@ function ui_bounds_y(id, val) {
 function ui_layer(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     registry.set(id + "::layer", val); 
-    mark_dirty(1, 1, 1, 1, 1); // Force a full GPU redraw!
+    mark_dirty(1, 1, 1, 1, 1); // Force a full GPU redraw
 }
 
 // --- SYMBOL COLOUR & TEXTURE ---
@@ -827,7 +853,7 @@ function ui_symbol_colour_end_sat(id, val) {
 function ui_symbol_colour_interp(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     registry.set(id + "::symbol_colour_interp", val); 
-    mark_dirty(0, 1, 0, 0, 0); // This tells the GPU to redraw!
+    mark_dirty(0, 1, 0, 0, 0); // This tells the GPU to redraw
 }
 
 // --- PATTERN COLOUR, TEXTURE & TILING ---
@@ -1120,7 +1146,7 @@ function draw_selections() {
 }
 
 // =========================================================
-// THE HARDWARE INSTANCING MATH
+// HARDWARE INSTANCING MATH
 // =========================================================
 
 function update_math() {
