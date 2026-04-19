@@ -53,10 +53,10 @@ var dirty_midi = false;
 var needs_recalc = false;
 
 function mark_dirty(pos, sym, pat, scl, til) {
-    if (pos) dirty_pos = true;
+    if (pos) { dirty_pos = true; dirty_midi = true; }
     if (sym) dirty_sym = true;
     if (pat) dirty_pat = true;
-    if (scl) dirty_scl = true;
+    if (scl) { dirty_scl = true; dirty_midi = true; }
     if (til) dirty_til = true;
     needs_recalc = true;
 }
@@ -1357,6 +1357,10 @@ function update_midi_math() {
         var sx = parseFloat(registry.get(id + "::bounds_x"));
         if (isNaN(sx) || sx === 0) sx = parseFloat(registry.get(id + "::scale_x")) || 0.5;
 
+        // --- ADD SY FOR VERTICAL SCALING ---
+        var sy = parseFloat(registry.get(id + "::bounds_y"));
+        if (isNaN(sy) || sy === 0) sy = parseFloat(registry.get(id + "::scale_y")) || 0.5;
+
         var rgb = registry.get(id + "::midi_trigger_rgb") || [1.0, 0.0, 0.0];
         var sat = parseFloat(registry.get(id + "::midi_trigger_sat")); if (isNaN(sat)) sat = 1.0;
         var finalColor = apply_sat(rgb[0], rgb[1], rgb[2], sat);
@@ -1367,8 +1371,9 @@ function update_midi_math() {
 
             // Layer 0.9999 ensures it renders on top
             matMidiPos.setcell1d(current_idx, ix, iy, 0.9999);
-            // 0.05 is the height of the squashed plane
-            matMidiScl.setcell1d(current_idx, sx, 0.05, 1.0); 
+            
+            // --- FIX: Thin X (0.05), Tall Y (sy) ---
+            matMidiScl.setcell1d(current_idx, 0.05, sy, 1.0); 
             matMidiCol.setcell1d(current_idx, finalColor[0], finalColor[1], finalColor[2], 1.0);
 
             current_idx++;
