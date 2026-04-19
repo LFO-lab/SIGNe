@@ -1,7 +1,7 @@
 autowatch = 1;
 
 inlets = 1;
-outlets = 10; // 0-4 for UI, 5-9 for GPU Triggers
+outlets = 11; // 0-4 for UI, 5-9 for GPU Triggers
 
 // =========================================================
 // STATE VARIABLES & SETTINGS
@@ -21,15 +21,25 @@ var groupCx = 0, groupCy = 0, lastCamX = 0, lastCamY = 0, camInitialized = false
 var liveViewAPI = null;
 
 // =========================================================
+// --- CENTRALIZED FRUSTUM CULLING ---
+// =========================================================
+var currentFirstBar = 0.0;
+var currentLastBar = 100.0;
+
+// =========================================================
 // GPU MATRICES (SHARED GLOBAL MEMORY BINDING)
 // =========================================================
 var last_total_instances = -1;
+var last_total_midi = -1;
 
 var matPos = new JitterMatrix(4, "float32", 1); matPos.name = "SIGNe_Pos_Data";
 var matSym = new JitterMatrix(4, "float32", 1); matSym.name = "SIGNe_Sym_Data";
 var matPat = new JitterMatrix(4, "float32", 1); matPat.name = "SIGNe_Pat_Data";
 var matScl = new JitterMatrix(4, "float32", 1); matScl.name = "SIGNe_Scl_Data";
 var matTil = new JitterMatrix(3, "float32", 1); matTil.name = "SIGNe_Til_Data";
+var matMidiPos = new JitterMatrix(3, "float32", 1); matMidiPos.name = "SIGNe_MidiPos_Data";
+var matMidiScl = new JitterMatrix(3, "float32", 1); matMidiScl.name = "SIGNe_MidiScl_Data";
+var matMidiCol = new JitterMatrix(4, "float32", 1); matMidiCol.name = "SIGNe_MidiCol_Data";
 
 // =========================================================
 // SIMULTANEOUS GPU UPLOAD
@@ -39,6 +49,7 @@ var dirty_sym = false;
 var dirty_pat = false;
 var dirty_scl = false;
 var dirty_til = false;
+var dirty_midi = false;
 var needs_recalc = false;
 
 function mark_dirty(pos, sym, pat, scl, til) {
@@ -50,9 +61,15 @@ function mark_dirty(pos, sym, pat, scl, til) {
     needs_recalc = true;
 }
 
+function mark_midi_dirty() {
+    dirty_midi = true;
+    needs_recalc = true;
+}
+
 function bang() {
     if (needs_recalc) {
         update_math();
+        update_midi_math();
         needs_recalc = false;
     }
     if (dirty_pos) { outlet(5, "bang"); dirty_pos = false; }
@@ -60,6 +77,7 @@ function bang() {
     if (dirty_pat) { outlet(7, "bang"); dirty_pat = false; }
     if (dirty_scl) { outlet(8, "bang"); dirty_scl = false; }
     if (dirty_til) { outlet(9, "bang"); dirty_til = false; }
+    if (dirty_midi) { outlet(10, "bang"); dirty_midi = false; }
 }
 
 // =========================================================
@@ -174,6 +192,72 @@ function apply_sat(r, g, b, sat) {
         b = hue2rgb(p, q, h - 1.0/3.0);
     }
     return [r, g, b];
+}
+
+// =========================================================
+// FRUSTUM CULLING
+// =========================================================
+// Call this from Max whenever the camera/screen scrolls
+function update_frustum(first, last) {
+    currentFirstBar = parseFloat(first);
+    currentLastBar = parseFloat(last);
+    check_frustum();
+}
+
+// Call this whenever a text object moves, scales, or duplicates
+function check_frustum() {
+    var registry = new Dict("SigneRegistry");
+    var keys = registry.getkeys();
+    if (keys == null) return;
+    if (typeof keys === "string") keys = [keys];
+
+    for (var i = 0; i < keys.length; i++) {
+        var id = keys[i];
+        
+        // Skip Symbols, we only need to cull Text objects
+        if (!registry.contains(id + "::text_content")) continue;
+
+        // Safely parse position and grouping numbers
+        var x = parseFloat(registry.get(id + "::x")) || 0.0;
+        var count = parseInt(registry.get(id + "::count")) || 1;
+        var spacing = parseFloat(registry.get(id + "::spacing")) || 0.0;
+        var gRot = parseFloat(registry.get(id + "::group_rot")) || 0.0;
+
+        // --- THE FIX: GRAB ACTUAL BOUNDS/SCALE ---
+        var sx = parseFloat(registry.get(id + "::bounds_x")); 
+        if (isNaN(sx) || sx === 0) sx = parseFloat(registry.get(id + "::scale_x")) || 0.5;
+        
+        var sy = parseFloat(registry.get(id + "::bounds_y")); 
+        if (isNaN(sy) || sy === 0) sy = parseFloat(registry.get(id + "::scale_y")) || 0.5;
+
+        // Calculate the maximum possible radius (hypotenuse) to protect rotated text
+        var dynamicMargin = Math.sqrt((sx * sx) + (sy * sy));
+        // -----------------------------------------
+
+        // Group rotation in radians for the trigonometry
+        var gRad = -gRot * Math.PI * 2.0;
+        
+        // Calculate the X position of the final duplicated instance
+        var endX = x + ((count - 1) * spacing * Math.cos(gRad));
+
+        // Find the absolute center left and right bounds of the group
+        var leftEdge = Math.min(x, endX);
+        var rightEdge = Math.max(x, endX);
+
+        // Apply the dynamic geometric margin
+        leftEdge -= dynamicMargin;
+        rightEdge += dynamicMargin;
+
+        // Check if the group overlaps the visible camera bounds
+        var inFrustum = 0;
+        if (rightEdge > currentFirstBar && leftEdge < currentLastBar) {
+            inFrustum = 1;
+        }
+
+        // Fire the result directly into the SIGNe-Text instance's gate
+        outlet(2, "send", id);
+        outlet(2, "in_frustum", inFrustum);
+    }
 }
 
 // =========================================================
@@ -355,6 +439,7 @@ function update_group_positions() {
     }
     draw_selections();
     mark_dirty(1, 0, 0, 0, 0); // Pos dirty
+    check_frustum();
 }
 
 function update_group_scale() {
@@ -386,6 +471,7 @@ function update_group_scale() {
     }
     draw_selections();
     mark_dirty(1, 0, 0, 1, 0); // Pos & Scl dirty
+    check_frustum();
 }
 
 function update_group_rotation() {
@@ -408,6 +494,7 @@ function update_group_rotation() {
     }
     draw_selections();
     mark_dirty(1, 0, 0, 0, 0); // Pos dirty
+    check_frustum();
 }
 
 function update_group_opacity() {
@@ -597,6 +684,7 @@ function ui_move_x(id, x) {
         } else { newX = snap(x, quantX); }
     }
     registry.set(id + "::x", newX); outlet(2, "send", id); draw_selections(); mark_dirty(1, 0, 0, 0, 0);
+    check_frustum();
 }
 
 function ui_move_y(id, y) {
@@ -604,6 +692,7 @@ function ui_move_y(id, y) {
     if (!registry.contains(id)) return;
     var v = (isHumanY === 1) ? snap(y, quantY) : y; 
     registry.set(id + "::y", v); outlet(2, "send", id); draw_selections(); mark_dirty(1, 0, 0, 0, 0);
+    check_frustum();
 }
 
 function ui_trigger_offset(id, val) {
@@ -624,6 +713,7 @@ function dial_scale_x(id, val, isHuman) {
         outlet(2, "scale_y", newY); outlet(2, "ui_y", newY); ignoreY = false;
     }
     draw_selections(); mark_dirty(1, 0, 0, 1, 0);
+    check_frustum();
 }
 
 function dial_scale_y(id, val, isHuman) {
@@ -638,16 +728,19 @@ function dial_scale_y(id, val, isHuman) {
         outlet(2, "scale_x", newX); outlet(2, "ui_x", newX); ignoreX = false;
     }
     draw_selections(); mark_dirty(1, 0, 0, 1, 0);
+    check_frustum();
 }
 
 function ui_scale_x(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     registry.set(id + "::scale_x", val); outlet(2, "send", id); draw_selections(); mark_dirty(1, 0, 0, 1, 0);
+    check_frustum();
 }
 
 function ui_scale_y(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     registry.set(id + "::scale_y", val); outlet(2, "send", id); draw_selections(); mark_dirty(1, 0, 0, 1, 0);
+    check_frustum();
 }
 
 function ui_rotate(id, val) {
@@ -663,27 +756,32 @@ function ui_opacity(id, val) {
 function ui_count(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     registry.set(id + "::count", val); outlet(2, "send", id); draw_selections(); mark_dirty(1, 1, 1, 1, 1);
+    check_frustum();
 }
 
 function ui_spacing(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     var v = (isHumanSpacing === 1) ? snap(val, quantSpacing) : val; 
     registry.set(id + "::spacing", v); outlet(2, "send", id); draw_selections(); mark_dirty(1, 1, 1, 1, 1);
+    check_frustum();
 }
 
 function ui_group_rot(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     registry.set(id + "::group_rot", val); outlet(2, "send", id); draw_selections(); mark_dirty(1, 0, 0, 0, 0);
+    check_frustum();
 }
 
 function ui_bounds_x(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     registry.set(id + "::bounds_x", val); draw_selections();
+    check_frustum();
 }
 
 function ui_bounds_y(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     registry.set(id + "::bounds_y", val); draw_selections();
+    check_frustum();
 }
 
 // --- POSITION / SCALE / LAYER ---
@@ -782,19 +880,19 @@ function ui_pattern_colour_interp(id, val) {
 // --- MIDI TRIGGERS ---
 function ui_midi_trigger_state(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
-    registry.set(id + "::midi_trigger_state", val);
+    registry.set(id + "::midi_trigger_state", val); mark_midi_dirty();
 }
 function ui_midi_trigger_offset(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
-    registry.set(id + "::trigger_offset", val);
+    registry.set(id + "::trigger_offset", val); mark_midi_dirty();
 }
 function ui_midi_trigger_rgb(id, r, g, b) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
-    registry.set(id + "::midi_trigger_rgb", [r, g, b]);
+    registry.set(id + "::midi_trigger_rgb", [r, g, b]); mark_midi_dirty();
 }
 function ui_midi_trigger_sat(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
-    registry.set(id + "::midi_trigger_sat", val);
+    registry.set(id + "::midi_trigger_sat", val); mark_midi_dirty();
 }
 function ui_midi_trigger_pitch(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
@@ -858,6 +956,8 @@ function ui_text_content() {
     
     var textContent = args.slice(1).join(" ");
     registry.set(id + "::text_content", textContent);
+    
+    check_frustum();
 }
 
 // --- SYMBOL & PATTERN UI STATE ---
@@ -874,7 +974,6 @@ function ui_symbol_category() {
 function ui_symbol_index(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     registry.set(id + "::symbol_index", val);
-    post("DICT SAVED: Index " + val + " for " + id + "\n"); // <-- ADD THIS
 }
 
 function ui_pattern_library() {
@@ -1204,11 +1303,83 @@ function update_math() {
     }
 }
 
+function update_midi_math() {
+    var registry = new Dict("SigneRegistry");
+    var keys = registry.getkeys();
+    
+    // If empty, hide the matrix
+    if (keys == null) {
+        matMidiPos.dim = 1; matMidiScl.dim = 1; matMidiCol.dim = 1;
+        matMidiScl.setcell1d(0, 0, 0, 0); 
+        last_total_midi = 0;
+        return;
+    }
+    if (typeof keys === "string") keys = [keys];
+
+    // Find all valid MIDI triggers
+    var valid_midi_ids = [];
+    var total_midi = 0;
+    for (var i = 0; i < keys.length; i++) {
+        var id = keys[i];
+        if (parseInt(registry.get(id + "::midi_trigger_state")) === 1) {
+            valid_midi_ids.push(id);
+            total_midi += (parseInt(registry.get(id + "::count")) || 1);
+        }
+    }
+
+    if (total_midi < 1) {
+        matMidiPos.dim = 1; matMidiScl.dim = 1; matMidiCol.dim = 1;
+        matMidiScl.setcell1d(0, 0, 0, 0); 
+        last_total_midi = 0;
+        return;
+    }
+
+    if (total_midi !== last_total_midi) {
+        matMidiPos.dim = total_midi;
+        matMidiScl.dim = total_midi;
+        matMidiCol.dim = total_midi;
+        last_total_midi = total_midi;
+    }
+
+    var current_idx = 0;
+    for (var i = 0; i < valid_midi_ids.length; i++) {
+        var id = valid_midi_ids[i];
+        var bx = parseFloat(registry.get(id + "::x")) || 0.0;
+        var by = parseFloat(registry.get(id + "::y")) || 0.0;
+        var tOff = parseFloat(registry.get(id + "::trigger_offset")) || 0.0;
+
+        var count = parseInt(registry.get(id + "::count")) || 1;
+        var spacing = parseFloat(registry.get(id + "::spacing")) || 0.0;
+        var gRot = parseFloat(registry.get(id + "::group_rot")) || 0.0;
+        var gCos = Math.cos(-gRot * 2.0 * Math.PI);
+        var gSin = Math.sin(-gRot * 2.0 * Math.PI);
+
+        var sx = parseFloat(registry.get(id + "::bounds_x"));
+        if (isNaN(sx) || sx === 0) sx = parseFloat(registry.get(id + "::scale_x")) || 0.5;
+
+        var rgb = registry.get(id + "::midi_trigger_rgb") || [1.0, 0.0, 0.0];
+        var sat = parseFloat(registry.get(id + "::midi_trigger_sat")); if (isNaN(sat)) sat = 1.0;
+        var finalColor = apply_sat(rgb[0], rgb[1], rgb[2], sat);
+
+        for (var j = 0; j < count; j++) {
+            var ix = bx + (j * spacing * gCos) + tOff;
+            var iy = by + (j * spacing * gSin);
+
+            // Layer 0.9999 ensures it renders on top
+            matMidiPos.setcell1d(current_idx, ix, iy, 0.9999);
+            // 0.05 is the height of the squashed plane
+            matMidiScl.setcell1d(current_idx, sx, 0.05, 1.0); 
+            matMidiCol.setcell1d(current_idx, finalColor[0], finalColor[1], finalColor[2], 1.0);
+
+            current_idx++;
+        }
+    }
+}
+
 // =========================================================
 // PROPERTIES WINDOW BROADCASTER
 // =========================================================
 function update_properties_window(id) {
-    post("Broadcasting properties for: " + id + "\n");
     var registry = new Dict("SigneRegistry");
 
     // --- Tell the Properties Window the target's name ---
@@ -1247,7 +1418,6 @@ function update_properties_window(id) {
     push_float("symbol_colour_end_sat", "Colour_EndSaturation_FromObject");
     push_float("symbol_colour_interp", "Colour_Interpolation_FromObject");
     push_string("symbol_texture", "SymbolTexture_FromObject"); // Change string if your receive name is different!
-    post("DICT PUSHING: Index " + registry.get(id + "::symbol_index") + "\n"); // <-- ADD THIS
     push_string("symbol_library", "ObjectLibraryFolderName_FromSymbol");
     push_string("symbol_category", "ObjectCategoryFolderName_FromSymbol");
     push_float("symbol_index", "SelectedObjectIndex_FromSymbol");
