@@ -77,7 +77,6 @@
 		#version 330 core
 		uniform sampler3D texSymbols;
 		uniform sampler3D texPatterns;
-
 		in jit_PerVertex {
 			vec2 texcoord;
 			vec4 sym_color;
@@ -87,33 +86,36 @@
 			vec2 pat_tiling;
 			float pat_intensity;
 		} jit_in;
-
 		out vec4 fragColor;
 
 		void main() {
 			ivec3 sym_dim = textureSize(texSymbols, 0);
 			ivec3 pat_dim = textureSize(texPatterns, 0);
-			
+
+			// 1. Calculate Z-slice normalized coordinates
 			float sym_z = (jit_in.sym_idx + 0.5) / float(sym_dim.z);
 			float pat_z = (jit_in.pat_idx + 0.5) / float(pat_dim.z);
 
-			vec4 sym_tex = texture(texSymbols, vec3(jit_in.texcoord, sym_z));
-			vec2 tiled_uv = fract((jit_in.texcoord - 0.5) * jit_in.pat_tiling + 0.5);
+			// 2. Flip the Y-coordinate for the Symbol lookup
+			vec2 sym_uv = vec2(jit_in.texcoord.x, 1.0 - jit_in.texcoord.y);
+			vec4 sym_tex = texture(texSymbols, vec3(sym_uv, sym_z));
+
+			// 3. Flip the Y-coordinate for the Pattern lookup
+			// We apply the flip BEFORE the tiling math to keep the pattern orientation consistent
+			vec2 flipped_coord = vec2(jit_in.texcoord.x, 1.0 - jit_in.texcoord.y);
+			vec2 tiled_uv = fract((flipped_coord - 0.5) * jit_in.pat_tiling + 0.5);
 			vec4 pat_tex = texture(texPatterns, vec3(tiled_uv, pat_z));
 
-			// EXCACT GEN CODE TRANSLATION:
-			// mix(SymbolColour, PatternColour, TiledPattern * PatternIntensity)
+			// 4. Color Mixing (EXACT GEN CODE TRANSLATION)
 			vec4 mixed_color = mix(jit_in.sym_color, jit_in.pat_color, pat_tex.r * jit_in.pat_intensity);
-			
-			// in1 * mixed_color
+
+			// 5. Final Output
 			fragColor = sym_tex * mixed_color;
-			// fragColor.rgb *= fragColor.a;
 
 			// --- DEPTH MASKING FIX ---
-        	// Throw away invisible pixels so they don't write to the Z-Buffer
-        	if (fragColor.a < 0.05) {
-            	discard; 
-        	}
+			if (fragColor.a < 0.05) {
+				discard;
+			}
 		}
 		]]>
 		</program>
