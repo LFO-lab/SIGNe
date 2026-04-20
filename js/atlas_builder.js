@@ -20,7 +20,7 @@ function build_atlases(signeFolderPath) {
     }
 
     // Build both atlases automatically
-    build_3d_texture(signeFolderPath + "/libraries", texSymbols, "symbols");
+    build_3d_texture(signeFolderPath + "/symbols", texSymbols, "symbols");
     build_3d_texture(signeFolderPath + "/patterns", texPatterns, "patterns");
     
     // Tell the Max patch we are done
@@ -68,7 +68,7 @@ function build_3d_texture(folderPath, targetTexture, dictKey) {
     // Save the index map to our dictionary so the UI knows what Z-slice = what image
     atlasDict.set(dictKey, nameMap);
 
-    post("Successfully built " + dictKey + " atlas with " + filePaths.length + " layers.\n");
+    // post("Successfully built " + dictKey + " atlas with " + filePaths.length + " layers.\n");
 }
 
 // 5. The Recursive Folder Search

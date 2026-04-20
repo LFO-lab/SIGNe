@@ -186,7 +186,7 @@
 					"numoutlets" : 1,
 					"outlettype" : [ "" ],
 					"patching_rect" : [ 15.0, 180.0, 120.0, 22.0 ],
-					"text" : "sprintf %slibraries"
+					"text" : "sprintf %ssymbols"
 				}
 
 			}
