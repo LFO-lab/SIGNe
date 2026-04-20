@@ -21,6 +21,12 @@ var groupCx = 0, groupCy = 0, lastCamX = 0, lastCamY = 0, camInitialized = false
 var liveViewAPI = null;
 
 // =========================================================
+// --- MIDI TRIGGERS ---
+// =========================================================
+var cached_midi_triggers = [];
+var last_playhead_x = -1.0;
+
+// =========================================================
 // --- CENTRALIZED FRUSTUM CULLING ---
 // =========================================================
 var currentFirstBar = 0.0;
@@ -70,6 +76,7 @@ function bang() {
     if (needs_recalc) {
         update_math();
         update_midi_math();
+        update_trigger_cache();
         needs_recalc = false;
     }
     if (dirty_pos) { outlet(5, "bang"); dirty_pos = false; }
@@ -1453,6 +1460,57 @@ function update_midi_math() {
             current_idx++;
         }
     }
+}
+
+function update_trigger_cache() {
+    cached_midi_triggers = [];
+    var registry = new Dict("SigneRegistry");
+    var keys = registry.getkeys();
+    
+    if (keys == null) return;
+    if (typeof keys === "string") keys = [keys];
+
+    for (var i = 0; i < keys.length; i++) {
+        var id = keys[i];
+        
+        // Grab the necessary position and spacing math
+        var bx = parseFloat(registry.get(id + "::x")) || 0.0;
+        var tOff = parseFloat(registry.get(id + "::trigger_offset")) || 0.0;
+        var count = parseInt(registry.get(id + "::count")) || 1;
+        var spacing = parseFloat(registry.get(id + "::spacing")) || 0.0;
+        var gRot = parseFloat(registry.get(id + "::group_rot")) || 0.0;
+        var gCos = Math.cos(-gRot * 2.0 * Math.PI);
+
+        // Calculate and cache every instance's X-coordinate
+        for (var j = 0; j < count; j++) {
+            var ix = bx + (j * spacing * gCos) + tOff;
+            cached_midi_triggers.push({ id: id, x: ix });
+        }
+    }
+}
+
+function transport_tick(current_x) {
+    // Initialize the playhead on the very first tick
+    if (last_playhead_x < 0) { last_playhead_x = current_x; return; }
+
+    // If the playhead jumps wildly (e.g. user clicked the timeline or it looped), ignore it to prevent misfires
+    if (Math.abs(current_x - last_playhead_x) > 0.5) {
+        last_playhead_x = current_x;
+        return;
+    }
+
+    // If playing forward normally, check if the playhead just crossed any trigger line
+    if (current_x > last_playhead_x) { 
+        for (var i = 0; i < cached_midi_triggers.length; i++) {
+            var tx = cached_midi_triggers[i].x;
+            if (last_playhead_x < tx && current_x >= tx) {
+                // Playhead crossed the line! Fire the midi command to that specific object
+                outlet(2, "send", cached_midi_triggers[i].id);
+                outlet(2, "fire_midi", 1); 
+            }
+        }
+    }
+    last_playhead_x = current_x;
 }
 
 // =========================================================
