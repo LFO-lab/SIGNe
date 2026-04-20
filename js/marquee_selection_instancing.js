@@ -88,20 +88,12 @@ function bang() {
 }
 
 // =========================================================
-// ABLETON LIVE API FOCUS LOGIC
+// ABLETON LIVE API FOCUS LOGIC (Ping Max Patch)
 // =========================================================
 function focus_live_device(id) {
-    var registry = new Dict("SigneRegistry");
-    var track_id = registry.get(id + "::live_track_id");
-    var device_id = registry.get(id + "::live_device_id");
-    
-    if (track_id != null && device_id != null) {
-        if (!liveViewAPI) {
-            liveViewAPI = new LiveAPI(null, "live_set view");
-        }
-        liveViewAPI.set("selected_track", "id", parseInt(track_id));
-        liveViewAPI.call("select_device", "id", parseInt(device_id));
-    }
+    // Tell the specific device to calculate its own path and focus itself
+    outlet(2, "send", id);
+    outlet(2, "focus_me", 1);
 }
 
 // =========================================================
