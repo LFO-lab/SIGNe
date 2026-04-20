@@ -157,7 +157,7 @@ function lerp(start, end, amt) {
     return (1.0 - amt) * start + amt * end;
 }
 
-function apply_sat(r, g, b, sat) {
+function rgbToHsl(r, g, b) {
     var max = Math.max(r, g, b), min = Math.min(r, g, b);
     var h, s, l = (max + min) / 2.0;
 
@@ -170,10 +170,11 @@ function apply_sat(r, g, b, sat) {
         else h = (r - g) / d + 4.0;
         h /= 6.0;
     }
-    
-    // Override the native saturation with our dial's value
-    s = Math.max(0.0, Math.min(1.0, sat));
+    return [h, s, l];
+}
 
+function hslToRgb(h, s, l) {
+    var r, g, b;
     var hue2rgb = function(p, q, t) {
         if (t < 0.0) t += 1.0;
         if (t > 1.0) t -= 1.0;
@@ -192,6 +193,17 @@ function apply_sat(r, g, b, sat) {
         b = hue2rgb(p, q, h - 1.0/3.0);
     }
     return [r, g, b];
+}
+
+function apply_sat(r, g, b, sat) {
+    // 1. Convert to HSL
+    var hsl = rgbToHsl(r, g, b);
+    
+    // 2. Override the native saturation with our dial's value
+    var new_s = Math.max(0.0, Math.min(1.0, sat));
+    
+    // 3. Convert back to RGB and return
+    return hslToRgb(hsl[0], new_s, hsl[2]);
 }
 
 // =========================================================
@@ -824,10 +836,14 @@ function ui_symbol_texture(id, val) {
 }
 
 function ui_symbol_colour_start_rgb() {
-    var args = arrayfromargs(arguments);
-    var id = args[0];
+    var args = arrayfromargs(arguments); var id = args[0];
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
-    registry.set(id + "::symbol_colour_start_rgb", args.slice(1)); 
+    
+    // args 1, 2, 3 are the desaturated RGB from the swatch
+    var hsl = rgbToHsl(args[1], args[2], args[3]);
+    var pureRGB = hslToRgb(hsl[0], 1.0, hsl[2]); // Force Saturation to 1.0
+    
+    registry.set(id + "::symbol_colour_start_rgb", pureRGB); 
     mark_dirty(0, 1, 0, 0, 0);
 }
 
@@ -840,7 +856,9 @@ function ui_symbol_colour_start_sat(id, val) {
 function ui_symbol_colour_end_rgb() {
     var args = arrayfromargs(arguments); var id = args[0];
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
-    registry.set(id + "::symbol_colour_end_rgb", args.slice(1)); 
+    var hsl = rgbToHsl(args[1], args[2], args[3]);
+    var pureRGB = hslToRgb(hsl[0], 1.0, hsl[2]);
+    registry.set(id + "::symbol_colour_end_rgb", pureRGB); 
     mark_dirty(0, 1, 0, 0, 0);
 }
 
@@ -848,6 +866,19 @@ function ui_symbol_colour_end_sat(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     registry.set(id + "::symbol_colour_end_sat", val); 
     mark_dirty(0, 1, 0, 0, 0); 
+}
+
+function ui_symbol_colour_start_hsl() {
+    var args = arrayfromargs(arguments); var id = args[0];
+    var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
+    var pureRGB = hslToRgb(args[1], 1.0, args[3]); // Force S=1.0!
+    registry.set(id + "::symbol_colour_start_rgb", pureRGB); mark_dirty(0, 1, 0, 0, 0);
+}
+function ui_symbol_colour_end_hsl() {
+    var args = arrayfromargs(arguments); var id = args[0];
+    var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
+    var pureRGB = hslToRgb(args[1], 1.0, args[3]);
+    registry.set(id + "::symbol_colour_end_rgb", pureRGB); mark_dirty(0, 1, 0, 0, 0);
 }
 
 function ui_symbol_colour_interp(id, val) {
@@ -872,10 +903,11 @@ function ui_pattern_intensity(id, val) {
 }
 
 function ui_pattern_colour_start_rgb() {
-    var args = arrayfromargs(arguments);
-    var id = args[0];
+    var args = arrayfromargs(arguments); var id = args[0];
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
-    registry.set(id + "::pattern_colour_start_rgb", args.slice(1)); 
+    var hsl = rgbToHsl(args[1], args[2], args[3]);
+    var pureRGB = hslToRgb(hsl[0], 1.0, hsl[2]);
+    registry.set(id + "::pattern_colour_start_rgb", pureRGB); 
     mark_dirty(0, 0, 1, 0, 0);
 }
 
@@ -888,7 +920,9 @@ function ui_pattern_colour_start_sat(id, val) {
 function ui_pattern_colour_end_rgb() {
     var args = arrayfromargs(arguments); var id = args[0];
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
-    registry.set(id + "::pattern_colour_end_rgb", args.slice(1)); 
+    var hsl = rgbToHsl(args[1], args[2], args[3]);
+    var pureRGB = hslToRgb(hsl[0], 1.0, hsl[2]);
+    registry.set(id + "::pattern_colour_end_rgb", pureRGB); 
     mark_dirty(0, 0, 1, 0, 0);
 }
 
@@ -897,6 +931,20 @@ function ui_pattern_colour_end_sat(id, val) {
     registry.set(id + "::pattern_colour_end_sat", val); 
     mark_dirty(0, 0, 1, 0, 0); 
 }
+
+function ui_pattern_colour_start_hsl() {
+    var args = arrayfromargs(arguments); var id = args[0];
+    var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
+    var pureRGB = hslToRgb(args[1], 1.0, args[3]);
+    registry.set(id + "::pattern_colour_start_rgb", pureRGB); mark_dirty(0, 0, 1, 0, 0);
+}
+function ui_pattern_colour_end_hsl() {
+    var args = arrayfromargs(arguments); var id = args[0];
+    var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
+    var pureRGB = hslToRgb(args[1], 1.0, args[3]);
+    registry.set(id + "::pattern_colour_end_rgb", pureRGB); mark_dirty(0, 0, 1, 0, 0);
+}
+
 function ui_pattern_colour_interp(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     registry.set(id + "::pattern_colour_interp", val); 
