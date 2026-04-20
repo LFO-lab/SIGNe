@@ -107,6 +107,7 @@
 			
 			// in1 * mixed_color
 			fragColor = sym_tex * mixed_color;
+			// fragColor.rgb *= fragColor.a;
 
 			// --- DEPTH MASKING FIX ---
         	// Throw away invisible pixels so they don't write to the Z-Buffer

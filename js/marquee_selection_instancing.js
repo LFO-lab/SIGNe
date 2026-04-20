@@ -291,12 +291,27 @@ function get_hit_object(px, py) {
 
     for (var i = 0; i < keys.length; i++) {
         var id = keys[i];
-        var objX = parseFloat(registry.get(id + "::x")) || 0.0, objY = parseFloat(registry.get(id + "::y")) || 0.0, layer = parseFloat(registry.get(id + "::layer")) || 0.0;
-        var sx = parseFloat(registry.get(id + "::bounds_x")); if (isNaN(sx) || sx === 0) sx = parseFloat(registry.get(id + "::scale_x")) || 0.5;
-        var sy = parseFloat(registry.get(id + "::bounds_y")); if (isNaN(sy) || sy === 0) sy = parseFloat(registry.get(id + "::scale_y")) || 0.5;
-        var rot = parseFloat(registry.get(id + "::rotation")) || 0.0, gRot = parseFloat(registry.get(id + "::group_rot")) || 0.0;
-        var count = parseInt(registry.get(id + "::count")) || 1, spacing = parseFloat(registry.get(id + "::spacing")) || 0.0;
-        var gCos = Math.cos(-gRot * 2.0 * Math.PI), gSin = Math.sin(-gRot * 2.0 * Math.PI);
+        var objX = parseFloat(registry.get(id + "::x")) || 0.0;
+        var objY = parseFloat(registry.get(id + "::y")) || 0.0;
+        
+        // Safely parse layer
+        var layerStr = registry.get(id + "::layer");
+        var layer = (layerStr !== null) ? parseFloat(layerStr) : 0.0;
+        if (isNaN(layer)) layer = 0.0;
+
+        // Force ABS on bounds in case text bounds output a negative width/height
+        var sx = Math.abs(parseFloat(registry.get(id + "::bounds_x"))); 
+        if (isNaN(sx) || sx === 0) sx = Math.abs(parseFloat(registry.get(id + "::scale_x"))) || 0.5;
+        
+        var sy = Math.abs(parseFloat(registry.get(id + "::bounds_y"))); 
+        if (isNaN(sy) || sy === 0) sy = Math.abs(parseFloat(registry.get(id + "::scale_y"))) || 0.5;
+        
+        var rot = parseFloat(registry.get(id + "::rotation")) || 0.0;
+        var gRot = parseFloat(registry.get(id + "::group_rot")) || 0.0;
+        var count = parseInt(registry.get(id + "::count")) || 1;
+        var spacing = parseFloat(registry.get(id + "::spacing")) || 0.0;
+        var gCos = Math.cos(-gRot * 2.0 * Math.PI);
+        var gSin = Math.sin(-gRot * 2.0 * Math.PI);
 
         for (var j = 0; j < count; j++) {
             var ix = objX + (j * spacing * gCos), iy = objY + (j * spacing * gSin);
@@ -304,8 +319,14 @@ function get_hit_object(px, py) {
             var rad = (rot + gRot) * 2.0 * Math.PI;
             var cosT = Math.cos(rad), sinT = Math.sin(rad); // Positive rad for inverse rotation!
             var localX = (dx * cosT) - (dy * sinT), localY = (dx * sinT) + (dy * cosT);
+            
+            // If the click is inside the bounds...
             if (Math.abs(localX) <= sx && Math.abs(localY) <= sy) {
-                if (layer >= highestLayer) { highestLayer = layer; hitID = id; }
+                // ...AND it is on a higher (or equal) layer than our current winner
+                if (layer >= highestLayer) { 
+                    highestLayer = layer; 
+                    hitID = id; 
+                }
             }
         }
     }
@@ -1243,43 +1264,6 @@ function update_math() {
         return; // Stop math execution here!
     }
 
-    // ==========================================
-    // --- SORT INSTANCES BY LAYER ---
-    // ==========================================
-    var sortArray = [];
-    for (var i = 0; i < keys.length; i++) {
-        var l = parseFloat(registry.get(keys[i] + "::layer"));
-        if (isNaN(l)) l = 0.0;
-        sortArray.push({ id: keys[i], layer: l });
-    }
-
-    // Sort ascending: Lower layer values get drawn first (background)
-    // Higher layer values get drawn last (foreground)
-    sortArray.sort(function(a, b) {
-        return a.layer - b.layer;
-    });
-
-    // Replace the 'keys' array with sorted IDs
-    for (var i = 0; i < sortArray.length; i++) {
-        keys[i] = sortArray[i].id;
-    }
-    // ==========================================
-
-    var total_instances = 0;
-    for (var i = 0; i < keys.length; i++) {
-        total_instances += (parseInt(registry.get(keys[i] + "::count")) || 1);
-    }
-    if (total_instances < 1) total_instances = 1;
-
-    if (total_instances !== last_total_instances) {
-        matPos.dim = total_instances;
-        matSym.dim = total_instances;
-        matPat.dim = total_instances;
-        matScl.dim = total_instances;
-        matTil.dim = total_instances;
-        last_total_instances = total_instances;
-    }
-
     // Fetch the arrays ONCE before the loop starts to save CPU
     var symArray = manifest.get("symbols");
     if (symArray != null && typeof symArray === "string") symArray = [symArray];
@@ -1287,7 +1271,11 @@ function update_math() {
     var patArray = manifest.get("patterns");
     if (patArray != null && typeof patArray === "string") patArray = [patArray];
 
-    var current_idx = 0;
+    // ==========================================
+    // 1. COLLECT ALL INSTANCES INTO A FLAT ARRAY
+    // ==========================================
+    var all_instances = [];
+
     for (var i = 0; i < keys.length; i++) {
         var id = keys[i];
         
@@ -1367,20 +1355,59 @@ function update_math() {
         var gRot = parseFloat(registry.get(id + "::group_rot")) || 0.0;
         var gCos = Math.cos(-gRot * 2.0 * Math.PI), gSin = Math.sin(-gRot * 2.0 * Math.PI);
 
-        // --- GENERATE MATRICES ---
         for (var j = 0; j < count; j++) {
             var ix = bx + (j * spacing * gCos), iy = by + (j * spacing * gSin);
             
-            matPos.setcell1d(current_idx, ix, iy, layer, rotRadians);
-            matSym.setcell1d(current_idx, sr, sg, sb, sa);
-            matPat.setcell1d(current_idx, pr, pg, pb, pa);
-            matScl.setcell1d(current_idx, sx, sy, symIdx, patIdx);
-            
-            // Output Tiling X, Tiling Y, and Pattern Intensity into normal buffer
-            matTil.setcell1d(current_idx, tx, ty, pIntensity);
-            
-            current_idx++;
+            // Push the fully calculated instance into the array
+            all_instances.push({
+                z: layer, // The sorting key
+                pos: [ix, iy, layer, rotRadians],
+                sym: [sr, sg, sb, sa],
+                pat: [pr, pg, pb, pa],
+                scl: [sx, sy, symIdx, patIdx],
+                til: [tx, ty, pIntensity]
+            });
         }
+    }
+
+    // ==========================================
+    // 2. SORT BY Z-DEPTH (Painter's Algorithm)
+    // ==========================================
+    // Lowest layer values get drawn first (background)
+    // Highest layer values get drawn last (foreground)
+    all_instances.sort(function(a, b) {
+        return a.z - b.z;
+    });
+
+    // ==========================================
+    // 3. RESIZE AND WRITE TO MATRICES
+    // ==========================================
+    var total_instances = all_instances.length;
+    if (total_instances === 0) total_instances = 1; // Failsafe size
+
+    if (total_instances !== last_total_instances) {
+        matPos.dim = total_instances;
+        matSym.dim = total_instances;
+        matPat.dim = total_instances;
+        matScl.dim = total_instances;
+        matTil.dim = total_instances;
+        last_total_instances = total_instances;
+    }
+
+    // Failsafe exit if array is truly empty to prevent indexing errors
+    if (all_instances.length === 0) {
+        matScl.setcell1d(0, 0, 0, 0, 0); 
+        return;
+    }
+
+    // Write the sorted data sequentially
+    for (var k = 0; k < all_instances.length; k++) {
+        var inst = all_instances[k];
+        matPos.setcell1d(k, inst.pos[0], inst.pos[1], inst.pos[2], inst.pos[3]);
+        matSym.setcell1d(k, inst.sym[0], inst.sym[1], inst.sym[2], inst.sym[3]);
+        matPat.setcell1d(k, inst.pat[0], inst.pat[1], inst.pat[2], inst.pat[3]);
+        matScl.setcell1d(k, inst.scl[0], inst.scl[1], inst.scl[2], inst.scl[3]);
+        matTil.setcell1d(k, inst.til[0], inst.til[1], inst.til[2]);
     }
 }
 
