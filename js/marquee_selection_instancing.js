@@ -212,7 +212,17 @@ function apply_sat(r, g, b, sat) {
 function update_frustum(first, last) {
     currentFirstBar = parseFloat(first);
     currentLastBar = parseFloat(last);
+    // Broadcast the exact width in bars to SIGNe-Background
+    messnamed("FrustumWidth", currentLastBar - currentFirstBar);
+
     check_frustum();
+}
+
+// Call this from Max when SIGNe-Background loads and requests the width
+function get_frustum_width() {
+    var fw = currentLastBar - currentFirstBar;
+    if (fw <= 0.0) fw = 20.0; // Safe fallback in case it fires before the camera initializes
+    messnamed("FrustumWidth", fw);
 }
 
 // Call this whenever a text object moves, scales, or duplicates
