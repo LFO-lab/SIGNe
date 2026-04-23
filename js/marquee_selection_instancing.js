@@ -10,12 +10,14 @@ var ignoreX = false, ignoreY = false;
 var isDraggingMarquee = false, isDraggingGroup = false, isScalingGroup = false;
 var isRotatingGroup = false, isAdjustingOpacityGroup = false, isScrubbing = false; 
 var handledClick = false, prevBtn = 0, got3DAnchor = false, lastViewportInteractionTime = 0; 
-var isAltDown = 0, isShiftDown = 0, isODown = 0, linkScale = 1, activeRatio = 1.0; 
+var isAltDown = 0, isShiftDown = 0, isODown = 0, linkScale = 1, activeRatio = 1.0;
+var globalPlayheadOffset = 0.0;
 var quantX = "free", quantY = "free", quantSpacing = "free";
 var isHumanX = 1, isHumanY = 1, isHumanSpacing = 1, snapToTrigger = 0, ROT_MAX = 1.0; 
 var winW = 1920, winH = 1080, curX = 0, curY = 0;
 var a2x = 0, a2y = 0, c2x = 0, c2y = 0, a3x = 0, a3y = 0, c3x = 0, c3y = 0;
 var groupCx = 0, groupCy = 0, lastCamX = 0, lastCamY = 0, camInitialized = false;
+var globalAspectRatio = 1.77;
 
 // GLOBAL LIVE API OBJECT (Centralized to save memory)
 var liveViewAPI = null;
@@ -137,6 +139,15 @@ function set_scrubbing(state) {
         release_group(); 
         outlet(0, "reset"); 
     }
+}
+
+function set_playhead_offset(val) {
+    globalPlayheadOffset = parseFloat(val);
+}
+
+function set_aspect_ratio(val) {
+    globalAspectRatio = parseFloat(val);
+    if (globalAspectRatio <= 0.0) globalAspectRatio = 1.0; // Failsafe
 }
 
 function snap(val, quant) {
@@ -1524,27 +1535,27 @@ function update_trigger_cache() {
 }
 
 function transport_tick(current_x) {
-    // Initialize the playhead on the very first tick
-    if (last_playhead_x < 0) { last_playhead_x = current_x; return; }
+    // Left edge of the screen is (current_x - 1.0) because the grid is 0-indexed.
+    // The true world position is just the left edge + the exact bar offset!
+    var offset_x = (current_x - 1.0) + globalPlayheadOffset;
 
-    // If the playhead jumps wildly (e.g. user clicked the timeline or it looped), ignore it to prevent misfires
-    if (Math.abs(current_x - last_playhead_x) > 0.5) {
-        last_playhead_x = current_x;
+    if (last_playhead_x < 0) { last_playhead_x = offset_x; return; }
+
+    if (Math.abs(offset_x - last_playhead_x) > 0.5) {
+        last_playhead_x = offset_x;
         return;
     }
 
-    // If playing forward normally, check if the playhead just crossed any trigger line
-    if (current_x > last_playhead_x) { 
+    if (offset_x > last_playhead_x) { 
         for (var i = 0; i < cached_midi_triggers.length; i++) {
             var tx = cached_midi_triggers[i].x;
-            if (last_playhead_x < tx && current_x >= tx) {
-                // Playhead crossed the line! Fire the midi command to that specific object
+            if (last_playhead_x < tx && offset_x >= tx) {
                 outlet(2, "send", cached_midi_triggers[i].id);
                 outlet(2, "fire_midi", 1); 
             }
         }
     }
-    last_playhead_x = current_x;
+    last_playhead_x = offset_x;
 }
 
 // =========================================================
