@@ -25,7 +25,7 @@ function init_pool() {
         var t = new JitterObject("jit.gl.text", "SIGNe");
         t.blend_enable = 1;
         t.depth_enable = 0;
-        t.layer = 100;
+        t.layer = 0;
         t.transform_reset = 2;
         t.align = 0; 
         t.mode = "3d"; 
