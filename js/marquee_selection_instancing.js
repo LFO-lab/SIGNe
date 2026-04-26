@@ -638,7 +638,8 @@ function release_selection() {
     if (leftmostID === null) {
         messnamed("SelectedObjectName", "none");
         messnamed("SelectedObjectIndex_FromSymbol", -1);
-        messnamed("SelectedObjectIsText", 0);
+        messnamed("SelectedPatternIndex_FromSymbol", -1);
+        messnamed("SelectedObjectIsText", -1);
     }
     // -----------------------------------------------------
 
@@ -656,7 +657,8 @@ function release_selection() {
     if (leftmostID === null) {
         messnamed("SelectedObjectName", "none"); // Triggers the gate close
         messnamed("SelectedObjectIndex_FromSymbol", -1); // Hides the blue panels
-        messnamed("SelectedObjectIsText", 0);
+        messnamed("SelectedPatternIndex_FromSymbol", -1);
+        messnamed("SelectedObjectIsText", -1);
     }
 
     draw_selections();
