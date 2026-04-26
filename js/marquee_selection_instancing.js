@@ -18,6 +18,7 @@ var winW = 1920, winH = 1080, curX = 0, curY = 0;
 var a2x = 0, a2y = 0, c2x = 0, c2y = 0, a3x = 0, a3y = 0, c3x = 0, c3y = 0;
 var groupCx = 0, groupCy = 0, lastCamX = 0, lastCamY = 0, camInitialized = false;
 var globalAspectRatio = 1.77;
+var showAllBounds = 0;
 
 // GLOBAL LIVE API OBJECT (Centralized to save memory)
 var liveViewAPI = null;
@@ -148,6 +149,11 @@ function set_playhead_offset(val) {
 function set_aspect_ratio(val) {
     globalAspectRatio = parseFloat(val);
     if (globalAspectRatio <= 0.0) globalAspectRatio = 1.0; // Failsafe
+}
+
+function draw_all_bounds(v) {
+    showAllBounds = v;
+    draw_selections(); // Force an immediate redraw when toggled
 }
 
 function snap(val, quant) {
@@ -1213,14 +1219,27 @@ function draw_selections() {
     var registry = new Dict("SigneRegistry");
     var keys = registry.getkeys();
     outlet(3, "reset");
+    
     if (keys == null) return;
     if (typeof keys === "string") keys = [keys];
+    
     for (var i = 0; i < keys.length; i++) {
         var id = keys[i];
-        if (registry.get(id + "::selected") == 1) { 
-            outlet(3, "glcolor", (registry.get(id + "::locked") == 1) ? [0.2, 0.6, 1.0, 1.0] : [1.0, 0.8, 0.0, 1.0]);
+        var isSelected = (registry.get(id + "::selected") == 1);
+        var isLocked = (registry.get(id + "::locked") == 1);
+
+        // Draw if it's selected OR if the global bounds toggle is on
+        if (isSelected || showAllBounds === 1) { 
+            
+            // Assign the color based on selection state
+            if (isSelected) {
+                outlet(3, "glcolor", isLocked ? [0.2, 0.6, 1.0, 1.0] : [1.0, 0.8, 0.0, 1.0]); // Blue if locked, Yellow if selected
+            } else {
+                outlet(3, "glcolor", [1.0, 0.0, 0.0, 1.0]); // Red if unselected but bounds are drawn
+            }
+
             var x = registry.get(id+"::x"), y = registry.get(id+"::y");
-			var sx = registry.get(id + "::bounds_x");
+            var sx = registry.get(id + "::bounds_x");
             if (sx == null) sx = registry.get(id + "::scale_x") || 0.0;
             var sy = registry.get(id + "::bounds_y");
             if (sy == null) sy = registry.get(id + "::scale_y") || 0.0;            
@@ -1228,6 +1247,7 @@ function draw_selections() {
             var count = registry.get(id+"::count") || 1, spacing = registry.get(id+"::spacing") || 0.0;
             var gCos = Math.cos(-gRot * 2 * Math.PI), gSin = Math.sin(-gRot * 2 * Math.PI);
             var cosT = Math.cos(-(rot+gRot) * 2 * Math.PI), sinT = Math.sin(-(rot+gRot) * 2 * Math.PI);
+            
             for (var j = 0; j < count; j++) {
                 var ix = x + (j * spacing * gCos), iy = y + (j * spacing * gSin);
                 outlet(3, "glbegin", "line_loop");
