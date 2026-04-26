@@ -710,8 +710,44 @@ function remove(id) {
 function ui_lock(id, state) {
     var registry = new Dict("SigneRegistry");
     if (!registry.contains(id)) return;
+    
     registry.set(id + "::locked", state);
     draw_selections(); 
+    
+    // Only update the central UI if this specific object is the one we're looking at
+    if (registry.get(id + "::selected") == 1) {
+        update_properties_window(id);
+    }
+}
+
+function ui_lock_all(state) {
+    var registry = new Dict("SigneRegistry");
+    var keys = registry.getkeys();
+    if (keys == null) return;
+    if (typeof keys === "string") keys = [keys];
+    
+    var activeSelectedID = null;
+
+    for (var i = 0; i < keys.length; i++) {
+        var id = keys[i];
+        registry.set(id + "::locked", state);
+        
+        // Tell the individual device UI to update its own padlock icon
+        outlet(2, "send", id);
+        outlet(2, "locked", state);
+        
+        // Remember if this object was the selected one
+        if (registry.get(id + "::selected") == 1) {
+            activeSelectedID = id;
+        }
+    }
+    
+    draw_selections();
+    
+    // If we had an object selected, refresh the Properties Window once at the very end
+    if (activeSelectedID !== null) {
+        update_properties_window(activeSelectedID);
+    }
 }
 
 function ui_select(target) {
@@ -1622,7 +1658,7 @@ function update_properties_window(id) {
     }
 
     push_float("locked", "ObjectIsLocked_FromSymbol");
-    
+
     // --- SYMBOL MAPPINGS ---
     push_color("symbol_colour_start_rgb", "Colour_StartRGB_FromObject");
     push_float("symbol_colour_start_sat", "Colour_StartSaturation_FromObject");
