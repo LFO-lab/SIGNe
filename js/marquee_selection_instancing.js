@@ -1228,14 +1228,20 @@ function draw_selections() {
         var isSelected = (registry.get(id + "::selected") == 1);
         var isLocked = (registry.get(id + "::locked") == 1);
 
-        // Draw if it's selected OR if the global bounds toggle is on
+        // Only draw if selected OR the global bounds toggle is on
         if (isSelected || showAllBounds === 1) { 
             
-            // Assign the color based on selection state
-            if (isSelected) {
-                outlet(3, "glcolor", isLocked ? [0.2, 0.6, 1.0, 1.0] : [1.0, 0.8, 0.0, 1.0]); // Blue if locked, Yellow if selected
-            } else {
-                outlet(3, "glcolor", [1.0, 0.0, 0.0, 1.0]); // Red if unselected but bounds are drawn
+            // Priority 1: Frozen (Ice Blue)
+            if (isLocked) {
+                outlet(3, "glcolor", [0.4, 0.8, 1.0, 1.0]); 
+            } 
+            // Priority 2: Selected & Unfrozen (Yellow)
+            else if (isSelected) {
+                outlet(3, "glcolor", [1.0, 0.8, 0.0, 1.0]); 
+            } 
+            // Priority 3: Unselected & Unfrozen (Red)
+            else {
+                outlet(3, "glcolor", [1.0, 0.0, 0.0, 1.0]); 
             }
 
             var x = registry.get(id+"::x"), y = registry.get(id+"::y");
@@ -1615,6 +1621,8 @@ function update_properties_window(id) {
         }
     }
 
+    push_float("locked", "ObjectIsLocked_FromSymbol");
+    
     // --- SYMBOL MAPPINGS ---
     push_color("symbol_colour_start_rgb", "Colour_StartRGB_FromObject");
     push_float("symbol_colour_start_sat", "Colour_StartSaturation_FromObject");
