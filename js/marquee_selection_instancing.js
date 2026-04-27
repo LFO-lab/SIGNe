@@ -61,6 +61,13 @@ var dirty_til = false;
 var dirty_midi = false;
 var needs_recalc = false;
 
+function loadbang() {
+    // Force the UI into its empty, hidden state immediately on boot
+    messnamed("SelectedObjectName", "none"); 
+    messnamed("SelectedObjectIndex_FromSymbol", -1); 
+    messnamed("SelectedPatternIndex_FromSymbol", -1);
+    messnamed("SelectedObjectIsText", -1);
+}
 function mark_dirty(pos, sym, pat, scl, til) {
     if (pos) { dirty_pos = true; dirty_midi = true; }
     if (sym) dirty_sym = true;
@@ -1246,6 +1253,14 @@ function group_prop_symbol(propName, filename) {
             registry.set(id + "::" + dictKey, filename); 
             outlet(2, "send", id); 
             outlet(2, dictKey, filename); 
+            
+            // --- ECHO THE NEW STRING BACK TO THE UI'S COLL ---
+            if (dictKey === "symbol_texture") {
+                messnamed("SymbolTexture_FromObject", filename);
+            } else {
+                messnamed("PatternTexture_FromObject", filename);
+            }
+            // -------------------------------------------------
         }
     }
     mark_dirty(0, 0, 0, 1, 0);
@@ -1665,10 +1680,9 @@ function update_properties_window(id) {
     push_color("symbol_colour_end_rgb", "Colour_EndRGB_FromObject");
     push_float("symbol_colour_end_sat", "Colour_EndSaturation_FromObject");
     push_float("symbol_colour_interp", "Colour_Interpolation_FromObject");
-    push_string("symbol_texture", "SymbolTexture_FromObject"); // Change string if your receive name is different!
     push_string("symbol_library", "ObjectLibraryFolderName_FromSymbol");
     push_string("symbol_category", "ObjectCategoryFolderName_FromSymbol");
-    push_float("symbol_index", "SelectedObjectIndex_FromSymbol");
+    push_string("symbol_texture", "SymbolTexture_FromObject");
 
     // --- PATTERN MAPPINGS ---
     push_color("pattern_colour_start_rgb", "Colour_Pattern_StartRGB_FromObject");
@@ -1676,12 +1690,11 @@ function update_properties_window(id) {
     push_color("pattern_colour_end_rgb", "Colour_Pattern_EndRGB_FromObject");
     push_float("pattern_colour_end_sat", "Colour_Pattern_EndSaturation_FromObject");
     push_float("pattern_colour_interp", "PatternColourInterp_FromObject");
-    push_string("pattern_texture", "PatternTexture_FromObject");
     push_float("pat_tiling_x", "PatternTiling_FromObject");
     push_float("pattern_intensity", "PatternIntensity_FromObject");
     push_string("pattern_library", "PatternLibraryFolderName_FromSymbol");
     push_string("pattern_category", "PatternCategoryFolderName_FromSymbol");
-    push_float("pattern_index", "SelectedPatternIndex_FromSymbol");
+    push_string("pattern_texture", "PatternTexture_FromObject");
 
     // --- MIDI MAPPINGS ---
     push_float("midi_trigger_state", "MIDITriggerStateFromObject");
