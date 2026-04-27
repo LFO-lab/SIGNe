@@ -11,6 +11,7 @@ var isDraggingMarquee = false, isDraggingGroup = false, isScalingGroup = false;
 var isRotatingGroup = false, isAdjustingOpacityGroup = false, isScrubbing = false; 
 var handledClick = false, prevBtn = 0, got3DAnchor = false, lastViewportInteractionTime = 0; 
 var isAltDown = 0, isShiftDown = 0, isODown = 0, linkScale = 1, activeRatio = 1.0;
+var isCmdDown = 0;
 var globalPlayheadOffset = 0.0;
 var quantX = "free", quantY = "free", quantSpacing = "free";
 var isHumanX = 1, isHumanY = 1, isHumanSpacing = 1, snapToTrigger = 0, ROT_MAX = 1.0; 
@@ -113,6 +114,7 @@ function window_size(w, h) { winW = w; winH = h; }
 function alt_key(state) { isAltDown = state; }
 function shift_key(state) { isShiftDown = state; }
 function o_key(state) { isODown = state; } 
+function cmd_key(state) { isCmdDown = state; }
 function set_quant_x(v) { quantX = v; quantSpacing = v; } 
 function set_quant_y(v) { quantY = v; }
 function set_quant_spacing(v) { quantSpacing = v; }
@@ -385,27 +387,46 @@ function picker_hit(target, state) {
                 var registry = new Dict("SigneRegistry");
                 var isSelected = registry.get(mathHitID + "::selected");
                 
-                if (isSelected != 1) {
-                    var keys = registry.getkeys();
-                    if (keys != null) {
-                        if (typeof keys === "string") keys = [keys];
-                        for (var i = 0; i < keys.length; i++) {
-                            registry.set(keys[i] + "::selected", 0);
-                            outlet(2, "send", keys[i]); outlet(2, "selected", 0); outlet(2, "selected_via_mouse", 0); 
+                // --- MULTI-SELECT TOGGLE LOGIC ---
+                if (isCmdDown === 1) {
+                    if (isSelected == 1) {
+                        // Deselect it!
+                        registry.set(mathHitID + "::selected", 0);
+                        outlet(2, "send", mathHitID); outlet(2, "selected", 0); outlet(2, "selected_via_mouse", 0); 
+                        draw_selections();
+                        return; // Exit early to prevent dragging/rotating!
+                    } else {
+                        // Add it to the selection!
+                        registry.set(mathHitID + "::selected", 1);
+                        update_properties_window(mathHitID);
+                        outlet(4, mathHitID, 1);
+                        outlet(2, "send", mathHitID); outlet(2, "selected", 1);
+                    }
+                } 
+                // --- STANDARD SINGLE-SELECT LOGIC ---
+                else {
+                    if (isSelected != 1) {
+                        var keys = registry.getkeys();
+                        if (keys != null) {
+                            if (typeof keys === "string") keys = [keys];
+                            for (var i = 0; i < keys.length; i++) {
+                                registry.set(keys[i] + "::selected", 0);
+                                outlet(2, "send", keys[i]); outlet(2, "selected", 0); outlet(2, "selected_via_mouse", 0); 
+                            }
+                        }
+                        registry.set(mathHitID + "::selected", 1);
+                        update_properties_window(mathHitID);
+                        outlet(4, mathHitID, 1);
+                        outlet(2, "send", mathHitID); outlet(2, "selected", 1);
+
+                        if (linkScale === 1) {
+                            var x = registry.get(mathHitID + "::scale_x") || 1.0, y = registry.get(mathHitID + "::scale_y") || 1.0;
+                            activeRatio = (x !== 0) ? (y / x) : 1.0;
                         }
                     }
-                    registry.set(mathHitID + "::selected", 1);
-                    update_properties_window(mathHitID);
-					outlet(4, mathHitID, 1);
-                    outlet(2, "send", mathHitID); outlet(2, "selected", 1);
-
-                    if (linkScale === 1) {
-                        var x = registry.get(mathHitID + "::scale_x") || 1.0, y = registry.get(mathHitID + "::scale_y") || 1.0;
-                        activeRatio = (x !== 0) ? (y / x) : 1.0;
-                    }
                 }
+
                 outlet(2, "send", mathHitID); outlet(2, "selected_via_mouse", 1);
-                
                 focus_live_device(mathHitID);
                 
                 if (isODown === 1) isAdjustingOpacityGroup = true;
@@ -597,7 +618,12 @@ function release_selection() {
     
     for (var i = 0; i < keys.length; i++) {
         var id = keys[i];
+        
+        // --- GRAB PREVIOUS SELECTION STATE ---
+        var wasSelected = (registry.get(id + "::selected") == 1);
         var isSelected = 0;
+        var hit = false;
+        
         var objX = registry.get(id + "::x"), objY = registry.get(id + "::y");
         var sx = registry.get(id + "::bounds_x"); if (sx == null) sx = registry.get(id + "::scale_x") || 0.0;
         var sy = registry.get(id + "::bounds_y"); if (sy == null) sy = registry.get(id + "::scale_y") || 0.0;
@@ -620,7 +646,6 @@ function release_selection() {
             var p3x = ix + ( sx*cosT + sy*sinT), p3y = iy + ( sx*sinT - sy*cosT);
             var p4x = ix + (-sx*cosT + sy*sinT), p4y = iy + (-sx*sinT - sy*cosT);
 
-            var hit = false;
             if (ix >= minX && ix <= maxX && iy >= minY && iy <= maxY) hit = true;
             else if (p1x >= minX && p1x <= maxX && p1y >= minY && p1y <= maxY) hit = true;
             else if (p2x >= minX && p2x <= maxX && p2y >= minY && p2y <= maxY) hit = true;
@@ -636,26 +661,29 @@ function release_selection() {
                 }
             }
 
-            if (hit) {
-                isSelected = 1; 
-                if (objX < leftmostX) { leftmostX = objX; leftmostID = id; } 
-                break; 
-            }
+            if (hit) break; // We just need to know if any part of the object was caught
         }
+        
+        // --- MULTI-SELECT RESOLUTION ---
+        if (isCmdDown === 1) {
+            // If Cmd is held, hitting an object toggles it. Missed objects keep their state.
+            isSelected = hit ? (wasSelected ? 0 : 1) : (wasSelected ? 1 : 0);
+        } else {
+            // Normal behavior: Only hit objects are selected.
+            isSelected = hit ? 1 : 0;
+        }
+
+        // Track the leftmost selected object for the Properties window
+        if (isSelected === 1 && objX < leftmostX) { 
+            leftmostX = objX; 
+            leftmostID = id; 
+        } 
         
         registry.set(id + "::selected", isSelected);
         outlet(4, id, (id === leftmostID) ? 1 : 0);
     }
     
-    // --- RESET PROPERTIES WINDOW IF BACKGROUND CLICKED ---
-    if (leftmostID === null) {
-        messnamed("SelectedObjectName", "none");
-        messnamed("SelectedObjectIndex_FromSymbol", -1);
-        messnamed("SelectedPatternIndex_FromSymbol", -1);
-        messnamed("SelectedObjectIsText", -1);
-    }
-    // -----------------------------------------------------
-
+    // Broadcast the updated states
     for (var i = 0; i < keys.length; i++) {
         var id = keys[i]; var isSelected = registry.get(id + "::selected");
         outlet(2, "send", id); outlet(2, "selected", isSelected); 
@@ -668,8 +696,8 @@ function release_selection() {
 
     // --- RESET PROPERTIES WINDOW IF BACKGROUND CLICKED ---
     if (leftmostID === null) {
-        messnamed("SelectedObjectName", "none"); // Triggers the gate close
-        messnamed("SelectedObjectIndex_FromSymbol", -1); // Hides the blue panels
+        messnamed("SelectedObjectName", "none"); 
+        messnamed("SelectedObjectIndex_FromSymbol", -1); 
         messnamed("SelectedPatternIndex_FromSymbol", -1);
         messnamed("SelectedObjectIsText", -1);
     }
