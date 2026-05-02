@@ -868,13 +868,29 @@ function dial_scale_x(id, val, isHuman) {
     if (isScalingGroup || ignoreX) return; 
     var registry = new Dict("SigneRegistry");
     if (!registry.contains(id)) return;
-    registry.set(id + "::scale_x", val); outlet(2, "send", id); outlet(2, "scale_x", val); 
+    
     var humanInteraction = (isHuman !== undefined) ? isHuman : 1;
+    
     if (linkScale === 1 && humanInteraction === 1) {
-        var newY = val * activeRatio;
+        // Grab the true ratio from the registry BEFORE we overwrite the value!
+        var oldX = registry.get(id + "::scale_x") || 1.0;
+        var oldY = registry.get(id + "::scale_y") || 1.0;
+        var currentRatio = (oldX !== 0) ? (oldY / oldX) : 1.0;
+        
+        // Save the new X
+        registry.set(id + "::scale_x", val); 
+        outlet(2, "send", id); outlet(2, "scale_x", val); 
+        
+        // Calculate and save the new Y
+        var newY = val * currentRatio;
         registry.set(id + "::scale_y", newY); ignoreY = true;
         outlet(2, "scale_y", newY); outlet(2, "ui_y", newY); ignoreY = false;
+    } else {
+        // Standard unlinked behavior
+        registry.set(id + "::scale_x", val); 
+        outlet(2, "send", id); outlet(2, "scale_x", val); 
     }
+    
     draw_selections(); mark_dirty(1, 0, 0, 1, 0);
     check_frustum();
 }
@@ -883,13 +899,29 @@ function dial_scale_y(id, val, isHuman) {
     if (isScalingGroup || ignoreY) return; 
     var registry = new Dict("SigneRegistry");
     if (!registry.contains(id)) return;
-    registry.set(id + "::scale_y", val); outlet(2, "send", id); outlet(2, "scale_y", val); 
+
     var humanInteraction = (isHuman !== undefined) ? isHuman : 1;
+    
     if (linkScale === 1 && humanInteraction === 1) {
-        var newX = (activeRatio !== 0) ? (val / activeRatio) : val;
+        // Grab the true ratio from the registry BEFORE we overwrite the value!
+        var oldX = registry.get(id + "::scale_x") || 1.0;
+        var oldY = registry.get(id + "::scale_y") || 1.0;
+        var currentRatio = (oldY !== 0) ? (oldX / oldY) : 1.0;
+        
+        // Save the new Y
+        registry.set(id + "::scale_y", val); 
+        outlet(2, "send", id); outlet(2, "scale_y", val); 
+        
+        // Calculate and save the new X
+        var newX = val * currentRatio;
         registry.set(id + "::scale_x", newX); ignoreX = true;
         outlet(2, "scale_x", newX); outlet(2, "ui_x", newX); ignoreX = false;
+    } else {
+        // Standard unlinked behavior
+        registry.set(id + "::scale_y", val); 
+        outlet(2, "send", id); outlet(2, "scale_y", val); 
     }
+    
     draw_selections(); mark_dirty(1, 0, 0, 1, 0);
     check_frustum();
 }
