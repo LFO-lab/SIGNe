@@ -24,6 +24,8 @@ var showAllBounds = 0;
 // GLOBAL LIVE API OBJECT (Centralized to save memory)
 var liveViewAPI = null;
 
+var is_booting = true; // Starts true so it protects us immediately on load
+
 // =========================================================
 // --- MIDI TRIGGERS ---
 // =========================================================
@@ -163,6 +165,16 @@ function set_aspect_ratio(val) {
 function draw_all_bounds(v) {
     showAllBounds = v;
     draw_selections(); // Force an immediate redraw when toggled
+}
+
+function request_rebuild() {
+    // Let's force whatever state clearing the mouse click does!
+    if (typeof release_selection === "function") {
+        release_selection(); 
+    }
+    
+    needs_recalc = true;
+    mark_dirty(1, 1, 1, 1, 1);
 }
 
 function snap(val, quant) {
@@ -989,7 +1001,8 @@ function ui_layer(id, val) {
 // --- SYMBOL COLOUR & TEXTURE ---
 function ui_symbol_texture(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
-    registry.set(id + "::symbol_texture", val); mark_dirty(0, 0, 0, 1, 0);
+    registry.set(id + "::symbol_texture", val); 
+    mark_dirty(1, 1, 1, 1, 1); // Force full matrix push
 }
 
 function ui_symbol_colour_start_rgb() {
@@ -1047,7 +1060,8 @@ function ui_symbol_colour_interp(id, val) {
 // --- PATTERN COLOUR, TEXTURE & TILING ---
 function ui_pattern_texture(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
-    registry.set(id + "::pattern_texture", val); mark_dirty(0, 0, 0, 1, 0);
+    registry.set(id + "::pattern_texture", val); 
+    mark_dirty(1, 1, 1, 1, 1); // Force full matrix push
 }
 function ui_pattern_tiling(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
