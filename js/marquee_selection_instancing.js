@@ -6,6 +6,8 @@ outlets = 11; // 0-4 for UI, 5-9 for GPU Triggers
 // =========================================================
 // STATE VARIABLES & SETTINGS
 // =========================================================
+var is_booting = true; // --- THE NEW BOOT FLAG ---
+
 var ignoreX = false, ignoreY = false;
 var isDraggingMarquee = false, isDraggingGroup = false, isScalingGroup = false;
 var isRotatingGroup = false, isAdjustingOpacityGroup = false, isScrubbing = false; 
@@ -23,8 +25,6 @@ var showAllBounds = 0;
 
 // GLOBAL LIVE API OBJECT (Centralized to save memory)
 var liveViewAPI = null;
-
-var is_booting = true; // Starts true so it protects us immediately on load
 
 // =========================================================
 // --- MIDI TRIGGERS ---
@@ -71,6 +71,16 @@ function loadbang() {
     messnamed("SelectedPatternIndex_FromSymbol", -1);
     messnamed("SelectedObjectIsText", -1);
 }
+
+// --- THE NEW UNLOCK FUNCTION ---
+function finish_booting() {
+    is_booting = false;
+    // Now that the dictionary is completely populated, do the heavy math EXACTLY ONCE
+    draw_selections();
+    check_frustum();
+    request_rebuild(); 
+}
+
 function mark_dirty(pos, sym, pat, scl, til) {
     if (pos) { dirty_pos = true; dirty_midi = true; }
     if (sym) dirty_sym = true;
@@ -86,32 +96,28 @@ function mark_midi_dirty() {
 }
 
 function bang() {
+    var pushed = false; 
+
     if (needs_recalc) {
         update_math();
         update_midi_math();
         update_trigger_cache();
         needs_recalc = false;
     }
-    if (dirty_pos) { outlet(5, "bang"); dirty_pos = false; }
-    if (dirty_sym) { outlet(6, "bang"); dirty_sym = false; }
-    if (dirty_pat) { outlet(7, "bang"); dirty_pat = false; }
-    if (dirty_scl) { outlet(8, "bang"); dirty_scl = false; }
-    if (dirty_til) { outlet(9, "bang"); dirty_til = false; }
-    if (dirty_midi) { outlet(10, "bang"); dirty_midi = false; }
+    
+    if (dirty_pos) { outlet(5, "bang"); dirty_pos = false; pushed = true; }
+    if (dirty_sym) { outlet(6, "bang"); dirty_sym = false; pushed = true; }
+    if (dirty_pat) { outlet(7, "bang"); dirty_pat = false; pushed = true; }
+    if (dirty_scl) { outlet(8, "bang"); dirty_scl = false; pushed = true; }
+    if (dirty_til) { outlet(9, "bang"); dirty_til = false; pushed = true; }
+    if (dirty_midi) { outlet(10, "bang"); dirty_midi = false; pushed = true; }
 }
 
-// =========================================================
-// ABLETON LIVE API FOCUS LOGIC (Ping Max Patch)
-// =========================================================
 function focus_live_device(id) {
-    // Tell the specific device to calculate its own path and focus itself
     outlet(2, "send", id);
     outlet(2, "focus_me", 1);
 }
 
-// =========================================================
-// UTILITIES
-// =========================================================
 function window_size(w, h) { winW = w; winH = h; }
 function alt_key(state) { isAltDown = state; }
 function shift_key(state) { isShiftDown = state; }
@@ -159,30 +165,20 @@ function set_playhead_offset(val) {
 
 function set_aspect_ratio(val) {
     globalAspectRatio = parseFloat(val);
-    if (globalAspectRatio <= 0.0) globalAspectRatio = 1.0; // Failsafe
+    if (globalAspectRatio <= 0.0) globalAspectRatio = 1.0;
 }
 
 function draw_all_bounds(v) {
     showAllBounds = v;
-    draw_selections(); // Force an immediate redraw when toggled
+    if (!is_booting) draw_selections(); 
 }
 
 function request_rebuild() {
-    // Let's force whatever state clearing the mouse click does!
     if (typeof release_selection === "function") {
         release_selection(); 
     }
-    
     needs_recalc = true;
     mark_dirty(1, 1, 1, 1, 1);
-}
-
-function finish_booting() {
-    is_booting = false;
-    // Now that the dictionary is completely populated, do the heavy math EXACTLY ONCE
-    draw_selections();
-    check_frustum();
-    request_rebuild(); 
 }
 
 function snap(val, quant) {
@@ -206,7 +202,7 @@ function rgbToHsl(r, g, b) {
     var max = Math.max(r, g, b), min = Math.min(r, g, b);
     var h, s, l = (max + min) / 2.0;
 
-    if (max === min) { h = s = 0; } // achromatic
+    if (max === min) { h = s = 0; }
     else {
         var d = max - min;
         s = l > 0.5 ? d / (2.0 - max - min) : d / (max + min);
@@ -229,7 +225,7 @@ function hslToRgb(h, s, l) {
         return p;
     };
 
-    if (s === 0.0) { r = g = b = l; } // Grayscale
+    if (s === 0.0) { r = g = b = l; } 
     else {
         var q = l < 0.5 ? l * (1.0 + s) : l + s - l * s;
         var p = 2.0 * l - q;
@@ -241,37 +237,24 @@ function hslToRgb(h, s, l) {
 }
 
 function apply_sat(r, g, b, sat) {
-    // 1. Convert to HSL
     var hsl = rgbToHsl(r, g, b);
-    
-    // 2. Override the native saturation with our dial's value
     var new_s = Math.max(0.0, Math.min(1.0, sat));
-    
-    // 3. Convert back to RGB and return
     return hslToRgb(hsl[0], new_s, hsl[2]);
 }
 
-// =========================================================
-// FRUSTUM CULLING
-// =========================================================
-// Call this from Max whenever the camera/screen scrolls
 function update_frustum(first, last) {
     currentFirstBar = parseFloat(first);
     currentLastBar = parseFloat(last);
-    // Broadcast the exact width in bars to SIGNe-Background
     messnamed("FrustumWidth", currentLastBar - currentFirstBar);
-
-    check_frustum();
+    if (!is_booting) check_frustum();
 }
 
-// Call this from Max when SIGNe-Background loads and requests the width
 function get_frustum_width() {
     var fw = currentLastBar - currentFirstBar;
-    if (fw <= 0.0) fw = 20.0; // Safe fallback in case it fires before the camera initializes
+    if (fw <= 0.0) fw = 20.0;
     messnamed("FrustumWidth", fw);
 }
 
-// Call this whenever a text object moves, scales, or duplicates
 function check_frustum() {
     var registry = new Dict("SigneRegistry");
     var keys = registry.getkeys();
@@ -280,56 +263,39 @@ function check_frustum() {
 
     for (var i = 0; i < keys.length; i++) {
         var id = keys[i];
-        
-        // Skip Symbols, we only need to cull Text objects
         if (!registry.contains(id + "::text_content")) continue;
 
-        // Safely parse position and grouping numbers
         var x = parseFloat(registry.get(id + "::x")) || 0.0;
         var count = parseInt(registry.get(id + "::count")) || 1;
         var spacing = parseFloat(registry.get(id + "::spacing")) || 0.0;
         var gRot = parseFloat(registry.get(id + "::group_rot")) || 0.0;
 
-        // --- THE FIX: GRAB ACTUAL BOUNDS/SCALE ---
         var sx = parseFloat(registry.get(id + "::bounds_x")); 
         if (isNaN(sx) || sx === 0) sx = parseFloat(registry.get(id + "::scale_x")) || 0.5;
         
         var sy = parseFloat(registry.get(id + "::bounds_y")); 
         if (isNaN(sy) || sy === 0) sy = parseFloat(registry.get(id + "::scale_y")) || 0.5;
 
-        // Calculate the maximum possible radius (hypotenuse) to protect rotated text
         var dynamicMargin = Math.sqrt((sx * sx) + (sy * sy));
-        // -----------------------------------------
-
-        // Group rotation in radians for the trigonometry
         var gRad = -gRot * Math.PI * 2.0;
-        
-        // Calculate the X position of the final duplicated instance
         var endX = x + ((count - 1) * spacing * Math.cos(gRad));
 
-        // Find the absolute center left and right bounds of the group
         var leftEdge = Math.min(x, endX);
         var rightEdge = Math.max(x, endX);
 
-        // Apply the dynamic geometric margin
         leftEdge -= dynamicMargin;
         rightEdge += dynamicMargin;
 
-        // Check if the group overlaps the visible camera bounds
         var inFrustum = 0;
         if (rightEdge > currentFirstBar && leftEdge < currentLastBar) {
             inFrustum = 1;
         }
 
-        // Fire the result directly into the SIGNe-Text instance's gate
         outlet(2, "send", id);
         outlet(2, "in_frustum", inFrustum);
     }
 }
 
-// =========================================================
-// PURE MATH RAYCASTING
-// =========================================================
 function get_hit_object(px, py) {
     var registry = new Dict("SigneRegistry");
     var keys = registry.getkeys();
@@ -342,12 +308,10 @@ function get_hit_object(px, py) {
         var objX = parseFloat(registry.get(id + "::x")) || 0.0;
         var objY = parseFloat(registry.get(id + "::y")) || 0.0;
         
-        // Safely parse layer
         var layerStr = registry.get(id + "::layer");
         var layer = (layerStr !== null) ? parseFloat(layerStr) : 0.0;
         if (isNaN(layer)) layer = 0.0;
 
-        // Force ABS on bounds in case text bounds output a negative width/height
         var sx = Math.abs(parseFloat(registry.get(id + "::bounds_x"))); 
         if (isNaN(sx) || sx === 0) sx = Math.abs(parseFloat(registry.get(id + "::scale_x"))) || 0.5;
         
@@ -365,12 +329,10 @@ function get_hit_object(px, py) {
             var ix = objX + (j * spacing * gCos), iy = objY + (j * spacing * gSin);
             var dx = px - ix, dy = py - iy;
             var rad = (rot + gRot) * 2.0 * Math.PI;
-            var cosT = Math.cos(rad), sinT = Math.sin(rad); // Positive rad for inverse rotation!
+            var cosT = Math.cos(rad), sinT = Math.sin(rad); 
             var localX = (dx * cosT) - (dy * sinT), localY = (dx * sinT) + (dy * cosT);
             
-            // If the click is inside the bounds...
             if (Math.abs(localX) <= sx && Math.abs(localY) <= sy) {
-                // ...AND it is on a higher (or equal) layer than our current winner
                 if (layer >= highestLayer) { 
                     highestLayer = layer; 
                     hitID = id; 
@@ -381,9 +343,6 @@ function get_hit_object(px, py) {
     return hitID;
 }
 
-// =========================================================
-// MOUSE LOGIC (Zero GPU interaction)
-// =========================================================
 function global_button(state) {
     if (state === 0 && prevBtn === 1) {
         if (isDraggingMarquee) release_selection();
@@ -407,24 +366,19 @@ function picker_hit(target, state) {
                 var registry = new Dict("SigneRegistry");
                 var isSelected = registry.get(mathHitID + "::selected");
                 
-                // --- MULTI-SELECT TOGGLE LOGIC ---
                 if (isCmdDown === 1) {
                     if (isSelected == 1) {
-                        // Deselect it!
                         registry.set(mathHitID + "::selected", 0);
                         outlet(2, "send", mathHitID); outlet(2, "selected", 0); outlet(2, "selected_via_mouse", 0); 
                         draw_selections();
-                        return; // Exit early to prevent dragging/rotating!
+                        return;
                     } else {
-                        // Add it to the selection!
                         registry.set(mathHitID + "::selected", 1);
                         update_properties_window(mathHitID);
                         outlet(4, mathHitID, 1);
                         outlet(2, "send", mathHitID); outlet(2, "selected", 1);
                     }
-                } 
-                // --- STANDARD SINGLE-SELECT LOGIC ---
-                else {
+                } else {
                     if (isSelected != 1) {
                         var keys = registry.getkeys();
                         if (keys != null) {
@@ -521,9 +475,6 @@ function release_group() {
     isDraggingGroup = false; isScalingGroup = false; isRotatingGroup = false; isAdjustingOpacityGroup = false;
 }
 
-// =========================================================
-// TRANSFORM UPDATES (View-Origin)
-// =========================================================
 function update_group_positions() {
     var deltaX = c3x - a3x; var deltaY = c3y - a3y;
     var registry = new Dict("SigneRegistry");
@@ -544,9 +495,12 @@ function update_group_positions() {
             outlet(2, "send", id); outlet(2, "move_x", newX); outlet(2, "move_y", newY);
         }
     }
-    draw_selections();
-    mark_dirty(1, 0, 0, 0, 0); // Pos dirty
-    check_frustum();
+    
+    if (!is_booting) {
+        draw_selections();
+        mark_dirty(1, 0, 0, 0, 0); 
+        check_frustum();
+    }
 }
 
 function update_group_scale() {
@@ -576,9 +530,12 @@ function update_group_scale() {
             outlet(2, "ui_x", newSx); outlet(2, "ui_y", newSy);
         }
     }
-    draw_selections();
-    mark_dirty(1, 0, 0, 1, 0); // Pos & Scl dirty
-    check_frustum();
+    
+    if (!is_booting) {
+        draw_selections();
+        mark_dirty(1, 0, 0, 1, 0); 
+        check_frustum();
+    }
 }
 
 function update_group_rotation() {
@@ -599,9 +556,12 @@ function update_group_rotation() {
             outlet(2, "send", id); outlet(2, "move_x", newX); outlet(2, "move_y", newY); outlet(2, "rotation", newRot);
         }
     }
-    draw_selections();
-    mark_dirty(1, 0, 0, 0, 0); // Pos dirty
-    check_frustum();
+    
+    if (!is_booting) {
+        draw_selections();
+        mark_dirty(1, 0, 0, 0, 0); 
+        check_frustum();
+    }
 }
 
 function update_group_opacity() {
@@ -619,8 +579,11 @@ function update_group_opacity() {
             outlet(2, "send", id); outlet(2, "opacity", newOpac);
         }
     }
-    draw_selections();
-    mark_dirty(0, 1, 1, 0, 0); 
+    
+    if (!is_booting) {
+        draw_selections();
+        mark_dirty(0, 1, 1, 0, 0); 
+    }
 }
 
 function release_selection() {
@@ -639,7 +602,6 @@ function release_selection() {
     for (var i = 0; i < keys.length; i++) {
         var id = keys[i];
         
-        // --- GRAB PREVIOUS SELECTION STATE ---
         var wasSelected = (registry.get(id + "::selected") == 1);
         var isSelected = 0;
         var hit = false;
@@ -680,20 +642,15 @@ function release_selection() {
                     if (Math.abs(lx) <= sx && Math.abs(ly) <= sy) { hit = true; break; }
                 }
             }
-
-            if (hit) break; // We just need to know if any part of the object was caught
+            if (hit) break; 
         }
         
-        // --- MULTI-SELECT RESOLUTION ---
         if (isCmdDown === 1) {
-            // If Cmd is held, hitting an object toggles it. Missed objects keep their state.
             isSelected = hit ? (wasSelected ? 0 : 1) : (wasSelected ? 1 : 0);
         } else {
-            // Normal behavior: Only hit objects are selected.
             isSelected = hit ? 1 : 0;
         }
 
-        // Track the leftmost selected object for the Properties window
         if (isSelected === 1 && objX < leftmostX) { 
             leftmostX = objX; 
             leftmostID = id; 
@@ -703,7 +660,6 @@ function release_selection() {
         outlet(4, id, (id === leftmostID) ? 1 : 0);
     }
     
-    // Broadcast the updated states
     for (var i = 0; i < keys.length; i++) {
         var id = keys[i]; var isSelected = registry.get(id + "::selected");
         outlet(2, "send", id); outlet(2, "selected", isSelected); 
@@ -714,7 +670,6 @@ function release_selection() {
         }
     }
 
-    // --- RESET PROPERTIES WINDOW IF BACKGROUND CLICKED ---
     if (leftmostID === null) {
         messnamed("SelectedObjectName", "none"); 
         messnamed("SelectedObjectIndex_FromSymbol", -1); 
@@ -722,14 +677,15 @@ function release_selection() {
         messnamed("SelectedObjectIsText", -1);
     }
 
-    draw_selections();
-    mark_dirty(1, 1, 1, 1, 1); 
+    if (!is_booting) {
+        draw_selections();
+        mark_dirty(1, 1, 1, 1, 1); 
+    }
 }
 
 // =========================================================
 // UI INTERACTIONS 
 // =========================================================
-// --- DROP NEW OBJECT AT PLAYHEAD ---
 function drop_new_object(id) {
     var api = new LiveAPI(null, "live_set");
     if (!api) return;
@@ -739,27 +695,30 @@ function drop_new_object(id) {
     var beatsPerBar = (num / den) * 4.0;
     var beats = parseFloat(api.get("current_song_time")[0]);
     
-    // Calculate current bar and add 2-bar drop offset
     var bars = (beats / beatsPerBar) + 1.0;
     var dropX = snap(bars + 2.0, quantX);
 
     var registry = new Dict("SigneRegistry");
     if (!registry.contains(id)) return;
 
-    // Update the registry and tell the UI dial to move
     registry.set(id + "::x", dropX);
     outlet(2, "send", id);
     outlet(2, "move_x", dropX);
     
-    draw_selections();
-    mark_dirty(1, 0, 0, 0, 0);
+    if (!is_booting) {
+        draw_selections();
+        mark_dirty(1, 0, 0, 0, 0);
+    }
 }
 
 function remove(id) {
     var registry = new Dict("SigneRegistry");
     if (registry.contains(id)) registry.remove(id);
-    draw_selections();
-    mark_dirty(1, 1, 1, 1, 1);
+    
+    if (!is_booting) {
+        draw_selections();
+        mark_dirty(1, 1, 1, 1, 1);
+    }
 }
 
 function ui_lock(id, state) {
@@ -767,9 +726,8 @@ function ui_lock(id, state) {
     if (!registry.contains(id)) return;
     
     registry.set(id + "::locked", state);
-    draw_selections(); 
+    if (!is_booting) draw_selections(); 
     
-    // Only update the central UI if this specific object is the one we're looking at
     if (registry.get(id + "::selected") == 1) {
         update_properties_window(id);
     }
@@ -786,20 +744,15 @@ function ui_lock_all(state) {
     for (var i = 0; i < keys.length; i++) {
         var id = keys[i];
         registry.set(id + "::locked", state);
-        
-        // Tell the individual device UI to update its own padlock icon
         outlet(2, "send", id);
         outlet(2, "locked", state);
-        
-        // Remember if this object was the selected one
         if (registry.get(id + "::selected") == 1) {
             activeSelectedID = id;
         }
     }
     
-    draw_selections();
+    if (!is_booting) draw_selections();
     
-    // If we had an object selected, refresh the Properties Window once at the very end
     if (activeSelectedID !== null) {
         update_properties_window(activeSelectedID);
     }
@@ -827,10 +780,9 @@ function ui_select(target) {
         var x = registry.get(target + "::scale_x") || 1.0, y = registry.get(target + "::scale_y") || 1.0;
         activeRatio = (x !== 0) ? (y / x) : 1.0;
     }
-    draw_selections();
+    if (!is_booting) draw_selections();
 }
 
-// LIVE UI REVERSE-LOOKUP FUNCTION
 function live_device_selected(device_id) {
     if (isScrubbing) return;
     var registry = new Dict("SigneRegistry");
@@ -843,9 +795,7 @@ function live_device_selected(device_id) {
         var reg_dev_id = registry.get(id + "::live_device_id");
         
         if (reg_dev_id !== null && parseInt(reg_dev_id) === parseInt(device_id)) {
-            // Prevent redundant selection updates if it's already the active object
             if (registry.get(id + "::selected") != 1) {
-                // Temporarily bypass the 500ms viewport interaction block
                 var tempTime = lastViewportInteractionTime;
                 lastViewportInteractionTime = 0; 
                 ui_select(id);
@@ -866,22 +816,39 @@ function ui_move_x(id, x) {
             newX = snap(x + tOff, quantX) - tOff;
         } else { newX = snap(x, quantX); }
     }
-    registry.set(id + "::x", newX); outlet(2, "send", id); draw_selections(); mark_dirty(1, 0, 0, 0, 0);
-    check_frustum();
+    registry.set(id + "::x", newX); 
+    outlet(2, "send", id); 
+    
+    if (!is_booting) {
+        draw_selections(); 
+        mark_dirty(1, 0, 0, 0, 0);
+        check_frustum();
+    }
 }
 
 function ui_move_y(id, y) {
     var registry = new Dict("SigneRegistry");
     if (!registry.contains(id)) return;
     var v = (isHumanY === 1) ? snap(y, quantY) : y; 
-    registry.set(id + "::y", v); outlet(2, "send", id); draw_selections(); mark_dirty(1, 0, 0, 0, 0);
-    check_frustum();
+    registry.set(id + "::y", v); 
+    outlet(2, "send", id); 
+    
+    if (!is_booting) {
+        draw_selections(); 
+        mark_dirty(1, 0, 0, 0, 0);
+        check_frustum();
+    }
 }
 
 function ui_trigger_offset(id, val) {
     var registry = new Dict("SigneRegistry");
     if (!registry.contains(id)) return;
-    registry.set(id + "::trigger_offset", val); draw_selections(); mark_dirty(1, 0, 0, 0, 0);
+    registry.set(id + "::trigger_offset", val); 
+    
+    if (!is_booting) {
+        draw_selections(); 
+        mark_dirty(1, 0, 0, 0, 0);
+    }
 }
 
 function dial_scale_x(id, val, isHuman) {
@@ -892,27 +859,26 @@ function dial_scale_x(id, val, isHuman) {
     var humanInteraction = (isHuman !== undefined) ? isHuman : 1;
     
     if (linkScale === 1 && humanInteraction === 1) {
-        // Grab the true ratio from the registry BEFORE we overwrite the value!
         var oldX = registry.get(id + "::scale_x") || 1.0;
         var oldY = registry.get(id + "::scale_y") || 1.0;
         var currentRatio = (oldX !== 0) ? (oldY / oldX) : 1.0;
         
-        // Save the new X
         registry.set(id + "::scale_x", val); 
         outlet(2, "send", id); outlet(2, "scale_x", val); 
         
-        // Calculate and save the new Y
         var newY = val * currentRatio;
         registry.set(id + "::scale_y", newY); ignoreY = true;
         outlet(2, "scale_y", newY); outlet(2, "ui_y", newY); ignoreY = false;
     } else {
-        // Standard unlinked behavior
         registry.set(id + "::scale_x", val); 
         outlet(2, "send", id); outlet(2, "scale_x", val); 
     }
     
-    draw_selections(); mark_dirty(1, 0, 0, 1, 0);
-    check_frustum();
+    if (!is_booting) {
+        draw_selections(); 
+        mark_dirty(1, 0, 0, 1, 0);
+        check_frustum();
+    }
 }
 
 function dial_scale_y(id, val, isHuman) {
@@ -923,112 +889,108 @@ function dial_scale_y(id, val, isHuman) {
     var humanInteraction = (isHuman !== undefined) ? isHuman : 1;
     
     if (linkScale === 1 && humanInteraction === 1) {
-        // Grab the true ratio from the registry BEFORE we overwrite the value!
         var oldX = registry.get(id + "::scale_x") || 1.0;
         var oldY = registry.get(id + "::scale_y") || 1.0;
         var currentRatio = (oldY !== 0) ? (oldX / oldY) : 1.0;
         
-        // Save the new Y
         registry.set(id + "::scale_y", val); 
         outlet(2, "send", id); outlet(2, "scale_y", val); 
         
-        // Calculate and save the new X
         var newX = val * currentRatio;
         registry.set(id + "::scale_x", newX); ignoreX = true;
         outlet(2, "scale_x", newX); outlet(2, "ui_x", newX); ignoreX = false;
     } else {
-        // Standard unlinked behavior
         registry.set(id + "::scale_y", val); 
         outlet(2, "send", id); outlet(2, "scale_y", val); 
     }
     
-    draw_selections(); mark_dirty(1, 0, 0, 1, 0);
-    check_frustum();
+    if (!is_booting) {
+        draw_selections(); 
+        mark_dirty(1, 0, 0, 1, 0);
+        check_frustum();
+    }
 }
 
 function ui_scale_x(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
-    registry.set(id + "::scale_x", val); outlet(2, "send", id); draw_selections(); mark_dirty(1, 0, 0, 1, 0);
-    check_frustum();
+    registry.set(id + "::scale_x", val); outlet(2, "send", id); 
+    if (!is_booting) { draw_selections(); mark_dirty(1, 0, 0, 1, 0); check_frustum(); }
 }
 
 function ui_scale_y(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
-    registry.set(id + "::scale_y", val); outlet(2, "send", id); draw_selections(); mark_dirty(1, 0, 0, 1, 0);
-    check_frustum();
+    registry.set(id + "::scale_y", val); outlet(2, "send", id); 
+    if (!is_booting) { draw_selections(); mark_dirty(1, 0, 0, 1, 0); check_frustum(); }
 }
 
 function ui_rotate(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
-    registry.set(id + "::rotation", val); outlet(2, "send", id); draw_selections(); mark_dirty(1, 0, 0, 0, 0);
+    registry.set(id + "::rotation", val); outlet(2, "send", id); 
+    if (!is_booting) { draw_selections(); mark_dirty(1, 0, 0, 0, 0); }
 }
 
 function ui_opacity(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
-    registry.set(id + "::opacity", val); outlet(2, "send", id); draw_selections(); mark_dirty(0, 1, 1, 0, 0);
+    registry.set(id + "::opacity", val); outlet(2, "send", id); 
+    if (!is_booting) { draw_selections(); mark_dirty(0, 1, 1, 0, 0); }
 }
 
 function ui_count(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
-    registry.set(id + "::count", val); outlet(2, "send", id); draw_selections(); mark_dirty(1, 1, 1, 1, 1);
-    check_frustum();
+    registry.set(id + "::count", val); outlet(2, "send", id); 
+    if (!is_booting) { draw_selections(); mark_dirty(1, 1, 1, 1, 1); check_frustum(); }
 }
 
 function ui_spacing(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     var v = (isHumanSpacing === 1) ? snap(val, quantSpacing) : val; 
-    registry.set(id + "::spacing", v); outlet(2, "send", id); draw_selections(); mark_dirty(1, 1, 1, 1, 1);
-    check_frustum();
+    registry.set(id + "::spacing", v); outlet(2, "send", id); 
+    if (!is_booting) { draw_selections(); mark_dirty(1, 1, 1, 1, 1); check_frustum(); }
 }
 
 function ui_group_rot(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
-    registry.set(id + "::group_rot", val); outlet(2, "send", id); draw_selections(); mark_dirty(1, 0, 0, 0, 0);
-    check_frustum();
+    registry.set(id + "::group_rot", val); outlet(2, "send", id); 
+    if (!is_booting) { draw_selections(); mark_dirty(1, 0, 0, 0, 0); check_frustum(); }
 }
 
 function ui_bounds_x(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
-    registry.set(id + "::bounds_x", val); draw_selections();
-    check_frustum();
+    registry.set(id + "::bounds_x", val); 
+    if (!is_booting) { draw_selections(); check_frustum(); }
 }
 
 function ui_bounds_y(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
-    registry.set(id + "::bounds_y", val); draw_selections();
-    check_frustum();
+    registry.set(id + "::bounds_y", val); 
+    if (!is_booting) { draw_selections(); check_frustum(); }
 }
 
-// --- POSITION / SCALE / LAYER ---
 function ui_layer(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     registry.set(id + "::layer", val); 
-    mark_dirty(1, 1, 1, 1, 1); // Force a full GPU redraw
+    if (!is_booting) mark_dirty(1, 1, 1, 1, 1); 
 }
 
-// --- SYMBOL COLOUR & TEXTURE ---
 function ui_symbol_texture(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     registry.set(id + "::symbol_texture", val); 
-    mark_dirty(1, 1, 1, 1, 1); // Force full matrix push
+    if (!is_booting) mark_dirty(1, 1, 1, 1, 1);
 }
 
 function ui_symbol_colour_start_rgb() {
     var args = arrayfromargs(arguments); var id = args[0];
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
-    
-    // args 1, 2, 3 are the desaturated RGB from the swatch
     var hsl = rgbToHsl(args[1], args[2], args[3]);
-    var pureRGB = hslToRgb(hsl[0], 1.0, hsl[2]); // Force Saturation to 1.0
-    
+    var pureRGB = hslToRgb(hsl[0], 1.0, hsl[2]); 
     registry.set(id + "::symbol_colour_start_rgb", pureRGB); 
-    mark_dirty(0, 1, 0, 0, 0);
+    if (!is_booting) mark_dirty(0, 1, 0, 0, 0);
 }
 
 function ui_symbol_colour_start_sat(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     registry.set(id + "::symbol_colour_start_sat", val); 
-    mark_dirty(0, 1, 0, 0, 0); // Triggers Symbol Matrix redraw
+    if (!is_booting) mark_dirty(0, 1, 0, 0, 0); 
 }
 
 function ui_symbol_colour_end_rgb() {
@@ -1037,48 +999,53 @@ function ui_symbol_colour_end_rgb() {
     var hsl = rgbToHsl(args[1], args[2], args[3]);
     var pureRGB = hslToRgb(hsl[0], 1.0, hsl[2]);
     registry.set(id + "::symbol_colour_end_rgb", pureRGB); 
-    mark_dirty(0, 1, 0, 0, 0);
+    if (!is_booting) mark_dirty(0, 1, 0, 0, 0);
 }
 
 function ui_symbol_colour_end_sat(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     registry.set(id + "::symbol_colour_end_sat", val); 
-    mark_dirty(0, 1, 0, 0, 0); 
+    if (!is_booting) mark_dirty(0, 1, 0, 0, 0); 
 }
 
 function ui_symbol_colour_start_hsl() {
     var args = arrayfromargs(arguments); var id = args[0];
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
-    var pureRGB = hslToRgb(args[1], 1.0, args[3]); // Force S=1.0!
-    registry.set(id + "::symbol_colour_start_rgb", pureRGB); mark_dirty(0, 1, 0, 0, 0);
+    var pureRGB = hslToRgb(args[1], 1.0, args[3]);
+    registry.set(id + "::symbol_colour_start_rgb", pureRGB); 
+    if (!is_booting) mark_dirty(0, 1, 0, 0, 0);
 }
+
 function ui_symbol_colour_end_hsl() {
     var args = arrayfromargs(arguments); var id = args[0];
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     var pureRGB = hslToRgb(args[1], 1.0, args[3]);
-    registry.set(id + "::symbol_colour_end_rgb", pureRGB); mark_dirty(0, 1, 0, 0, 0);
+    registry.set(id + "::symbol_colour_end_rgb", pureRGB); 
+    if (!is_booting) mark_dirty(0, 1, 0, 0, 0);
 }
 
 function ui_symbol_colour_interp(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     registry.set(id + "::symbol_colour_interp", val); 
-    mark_dirty(0, 1, 0, 0, 0); // This tells the GPU to redraw
+    if (!is_booting) mark_dirty(0, 1, 0, 0, 0); 
 }
 
-// --- PATTERN COLOUR, TEXTURE & TILING ---
 function ui_pattern_texture(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     registry.set(id + "::pattern_texture", val); 
-    mark_dirty(1, 1, 1, 1, 1); // Force full matrix push
+    if (!is_booting) mark_dirty(1, 1, 1, 1, 1); 
 }
+
 function ui_pattern_tiling(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
-    registry.set(id + "::pat_tiling_x", val); registry.set(id + "::pat_tiling_y", val); mark_dirty(0, 0, 0, 0, 1);
+    registry.set(id + "::pat_tiling_x", val); registry.set(id + "::pat_tiling_y", val); 
+    if (!is_booting) mark_dirty(0, 0, 0, 0, 1);
 }
+
 function ui_pattern_intensity(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     registry.set(id + "::pattern_intensity", val); 
-    mark_dirty(0, 0, 1, 0, 0);
+    if (!is_booting) mark_dirty(0, 0, 1, 0, 0);
 }
 
 function ui_pattern_colour_start_rgb() {
@@ -1087,13 +1054,13 @@ function ui_pattern_colour_start_rgb() {
     var hsl = rgbToHsl(args[1], args[2], args[3]);
     var pureRGB = hslToRgb(hsl[0], 1.0, hsl[2]);
     registry.set(id + "::pattern_colour_start_rgb", pureRGB); 
-    mark_dirty(0, 0, 1, 0, 0);
+    if (!is_booting) mark_dirty(0, 0, 1, 0, 0);
 }
 
 function ui_pattern_colour_start_sat(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     registry.set(id + "::pattern_colour_start_sat", val); 
-    mark_dirty(0, 0, 1, 0, 0); // Triggers Pattern Matrix redraw
+    if (!is_booting) mark_dirty(0, 0, 1, 0, 0); 
 }
 
 function ui_pattern_colour_end_rgb() {
@@ -1102,65 +1069,76 @@ function ui_pattern_colour_end_rgb() {
     var hsl = rgbToHsl(args[1], args[2], args[3]);
     var pureRGB = hslToRgb(hsl[0], 1.0, hsl[2]);
     registry.set(id + "::pattern_colour_end_rgb", pureRGB); 
-    mark_dirty(0, 0, 1, 0, 0);
+    if (!is_booting) mark_dirty(0, 0, 1, 0, 0);
 }
 
 function ui_pattern_colour_end_sat(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     registry.set(id + "::pattern_colour_end_sat", val); 
-    mark_dirty(0, 0, 1, 0, 0); 
+    if (!is_booting) mark_dirty(0, 0, 1, 0, 0); 
 }
 
 function ui_pattern_colour_start_hsl() {
     var args = arrayfromargs(arguments); var id = args[0];
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     var pureRGB = hslToRgb(args[1], 1.0, args[3]);
-    registry.set(id + "::pattern_colour_start_rgb", pureRGB); mark_dirty(0, 0, 1, 0, 0);
+    registry.set(id + "::pattern_colour_start_rgb", pureRGB); 
+    if (!is_booting) mark_dirty(0, 0, 1, 0, 0);
 }
+
 function ui_pattern_colour_end_hsl() {
     var args = arrayfromargs(arguments); var id = args[0];
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     var pureRGB = hslToRgb(args[1], 1.0, args[3]);
-    registry.set(id + "::pattern_colour_end_rgb", pureRGB); mark_dirty(0, 0, 1, 0, 0);
+    registry.set(id + "::pattern_colour_end_rgb", pureRGB); 
+    if (!is_booting) mark_dirty(0, 0, 1, 0, 0);
 }
 
 function ui_pattern_colour_interp(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     registry.set(id + "::pattern_colour_interp", val); 
-    mark_dirty(0, 0, 1, 0, 0);
+    if (!is_booting) mark_dirty(0, 0, 1, 0, 0);
 }
 
-// --- MIDI TRIGGERS ---
 function ui_midi_trigger_state(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
-    registry.set(id + "::midi_trigger_state", val); mark_midi_dirty();
+    registry.set(id + "::midi_trigger_state", val); 
+    if (!is_booting) mark_midi_dirty();
 }
+
 function ui_midi_trigger_offset(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
-    registry.set(id + "::trigger_offset", val); mark_midi_dirty();
+    registry.set(id + "::trigger_offset", val); 
+    if (!is_booting) mark_midi_dirty();
 }
+
 function ui_midi_trigger_rgb(id, r, g, b) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
-    registry.set(id + "::midi_trigger_rgb", [r, g, b]); mark_midi_dirty();
+    registry.set(id + "::midi_trigger_rgb", [r, g, b]); 
+    if (!is_booting) mark_midi_dirty();
 }
+
 function ui_midi_trigger_sat(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
-    registry.set(id + "::midi_trigger_sat", val); mark_midi_dirty();
+    registry.set(id + "::midi_trigger_sat", val); 
+    if (!is_booting) mark_midi_dirty();
 }
+
 function ui_midi_trigger_pitch(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     registry.set(id + "::midi_trigger_pitch", val);
 }
+
 function ui_midi_trigger_velocity(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     registry.set(id + "::midi_trigger_velocity", val);
 }
+
 function ui_midi_trigger_duration(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     registry.set(id + "::midi_trigger_duration", val);
 }
 
-// --- TEXT PROPERTIES ---
 function ui_text_italic(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     registry.set(id + "::text_italic", val);
@@ -1191,13 +1169,10 @@ function ui_base_bounds_y(id, val) {
     registry.set(id + "::base_bounds_y", val);
 }
 
-// Fonts and Text Content can have spaces (e.g., "Courier New" or "Hello World"), 
-// so we need to grab all arguments and join them back into a single string.
 function ui_text_font() {
     var args = arrayfromargs(arguments);
     var id = args[0];
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
-    
     var fontName = args.slice(1).join(" ");
     registry.set(id + "::text_font", fontName);
 }
@@ -1206,14 +1181,11 @@ function ui_text_content() {
     var args = arrayfromargs(arguments);
     var id = args[0];
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
-    
     var textContent = args.slice(1).join(" ");
     registry.set(id + "::text_content", textContent);
-    
-    check_frustum();
+    if (!is_booting) check_frustum();
 }
 
-// --- SYMBOL & PATTERN UI STATE ---
 function ui_symbol_library() {
     var args = arrayfromargs(arguments); var id = args[0];
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
@@ -1265,7 +1237,7 @@ function camera_pos(cx, cy) {
                 }
             }
         }
-        draw_selections(); mark_dirty(1, 0, 0, 0, 0);
+        if (!is_booting) { draw_selections(); mark_dirty(1, 0, 0, 0, 0); }
     }
     lastCamX = cx; lastCamY = cy;
 }
@@ -1280,7 +1252,8 @@ function move_to_transport(id) {
         var tOff = registry.get(id + "::trigger_offset") || 0.0;
         v = snap(bars, quantX) - tOff;
     } else { v = snap(bars, quantX); }
-    registry.set(id + "::x", v); outlet(2, "send", id); outlet(2, "move_x", v); draw_selections(); mark_dirty(1, 0, 0, 0, 0);
+    registry.set(id + "::x", v); outlet(2, "send", id); outlet(2, "move_x", v); 
+    if (!is_booting) { draw_selections(); mark_dirty(1, 0, 0, 0, 0); }
 }
 
 function move_transport_to_object(id) {
@@ -1303,7 +1276,7 @@ function group_prop_float(propName, val) {
         var id = keys[i];
         if (registry.get(id + "::selected") == 1) { registry.set(id + "::" + propName, val); outlet(2, "send", id); outlet(2, propName, val); }
     }
-    mark_dirty(1, 1, 1, 1, 1);
+    if (!is_booting) mark_dirty(1, 1, 1, 1, 1);
 }
 
 function group_prop_rgb(propName, r, g, b, a) {
@@ -1315,13 +1288,12 @@ function group_prop_rgb(propName, r, g, b, a) {
         var id = keys[i];
         if (registry.get(id + "::selected") == 1) { registry.set(id + "::" + propName, [r, g, b, a]); outlet(2, "send", id); outlet(2, propName, r, g, b, a); }
     }
-    mark_dirty(0, 1, 1, 0, 0);
+    if (!is_booting) mark_dirty(0, 1, 1, 0, 0);
 }
 
 function group_prop_symbol(propName, filename) {
     if (filename === undefined) { filename = propName; propName = "symbol_texture"; }
     
-    // Make sure we are saving to the correct key depending on the dropdown used
     var dictKey = (propName === "pattern_texture") ? "pattern_texture" : "symbol_texture";
     
     var registry = new Dict("SigneRegistry"); 
@@ -1336,16 +1308,14 @@ function group_prop_symbol(propName, filename) {
             outlet(2, "send", id); 
             outlet(2, dictKey, filename); 
             
-            // --- ECHO THE NEW STRING BACK TO THE UI'S COLL ---
             if (dictKey === "symbol_texture") {
                 messnamed("SymbolTexture_FromObject", filename);
             } else {
                 messnamed("PatternTexture_FromObject", filename);
             }
-            // -------------------------------------------------
         }
     }
-    mark_dirty(0, 0, 0, 1, 0);
+    if (!is_booting) mark_dirty(0, 0, 0, 1, 0);
 }
 
 function draw_selections() {
@@ -1361,19 +1331,12 @@ function draw_selections() {
         var isSelected = (registry.get(id + "::selected") == 1);
         var isLocked = (registry.get(id + "::locked") == 1);
 
-        // Only draw if selected OR the global bounds toggle is on
         if (isSelected || showAllBounds === 1) { 
-            
-            // Priority 1: Frozen (Ice Blue)
             if (isLocked) {
                 outlet(3, "glcolor", [0.4, 0.8, 1.0, 1.0]); 
-            } 
-            // Priority 2: Selected & Unfrozen (Yellow)
-            else if (isSelected) {
+            } else if (isSelected) {
                 outlet(3, "glcolor", [1.0, 0.8, 0.0, 1.0]); 
-            } 
-            // Priority 3: Unselected & Unfrozen (Red)
-            else {
+            } else {
                 outlet(3, "glcolor", [1.0, 0.0, 0.0, 1.0]); 
             }
 
@@ -1421,38 +1384,29 @@ function update_math() {
     
     if (typeof keys === "string") keys = [keys];
 
-    // ==========================================
-    // --- FILTER OUT NON-SYMBOLS (e.g., SIGNe-Text) ---
-    // ==========================================
     var valid_symbols = [];
     for (var i = 0; i < keys.length; i++) {
-        // Only objects that have a 'symbol_texture' property will be instanced by this mesh
         if (registry.contains(keys[i] + "::symbol_texture")) {
             valid_symbols.push(keys[i]);
         }
     }
-    keys = valid_symbols; // Overwrite the keys array with ONLY symbols
+    keys = valid_symbols; 
     
-    // Safety check: If there are no symbols left (e.g., only Text objects exist)
     if (keys.length === 0) {
         if (last_total_instances !== 1) {
             matPos.dim = 1; matSym.dim = 1; matPat.dim = 1; matScl.dim = 1; matTil.dim = 1;
             last_total_instances = 1;
         }
         matScl.setcell1d(0, 0, 0, 0, 0); 
-        return; // Stop math execution here!
+        return; 
     }
 
-    // Fetch the arrays ONCE before the loop starts to save CPU
     var symArray = manifest.get("symbols");
     if (symArray != null && typeof symArray === "string") symArray = [symArray];
     
     var patArray = manifest.get("patterns");
     if (patArray != null && typeof patArray === "string") patArray = [patArray];
 
-    // ==========================================
-    // 1. COLLECT ALL INSTANCES INTO A FLAT ARRAY
-    // ==========================================
     var all_instances = [];
 
     for (var i = 0; i < keys.length; i++) {
@@ -1465,7 +1419,6 @@ function update_math() {
         var sx = parseFloat(registry.get(id + "::scale_x")); if (isNaN(sx)) sx = 1.0;
         var sy = parseFloat(registry.get(id + "::scale_y")); if (isNaN(sy)) sy = 1.0;
         
-        // --- NESTED FOLDER ATLAS INDEX LOOKUP ---
         var symIdx = 0.0;
         var patIdx = 0.0;
         
@@ -1489,32 +1442,26 @@ function update_math() {
             }
         }
 
-        // --- FETCH OPACITY AND COLOUR DATA ---
         var opac = parseFloat(registry.get(id + "::opacity")); if (isNaN(opac)) opac = 1.0;
 
-        // Fetch Base RGBs
         var sStart = registry.get(id + "::symbol_colour_start_rgb") || [1.0, 1.0, 1.0, 1.0];
         var sEnd = registry.get(id + "::symbol_colour_end_rgb") || [1.0, 1.0, 1.0, 1.0];
         var pStart = registry.get(id + "::pattern_colour_start_rgb") || [0.0, 0.0, 0.0, 1.0];
         var pEnd = registry.get(id + "::pattern_colour_end_rgb") || [0.0, 0.0, 0.0, 1.0];
 
-        // Fetch Saturations
         var sStartSat = parseFloat(registry.get(id + "::symbol_colour_start_sat")); if (isNaN(sStartSat)) sStartSat = 1.0;
         var sEndSat = parseFloat(registry.get(id + "::symbol_colour_end_sat")); if (isNaN(sEndSat)) sEndSat = 1.0;
         var pStartSat = parseFloat(registry.get(id + "::pattern_colour_start_sat")); if (isNaN(pStartSat)) pStartSat = 1.0;
         var pEndSat = parseFloat(registry.get(id + "::pattern_colour_end_sat")); if (isNaN(pEndSat)) pEndSat = 1.0;
         
-        // Fetch Interpolation
         var sInterp = parseFloat(registry.get(id + "::symbol_colour_interp")); if (isNaN(sInterp)) sInterp = 0.0;
         var pInterp = parseFloat(registry.get(id + "::pattern_colour_interp")); if (isNaN(pInterp)) pInterp = 0.0;
 
-        // Apply Saturation to the RGBs
         var sStartRGB = apply_sat(sStart[0], sStart[1], sStart[2], sStartSat);
         var sEndRGB = apply_sat(sEnd[0], sEnd[1], sEnd[2], sEndSat);
         var pStartRGB = apply_sat(pStart[0], pStart[1], pStart[2], pStartSat);
         var pEndRGB = apply_sat(pEnd[0], pEnd[1], pEnd[2], pEndSat);
 
-        // Calculate Interpolated Final Colours
         var sr = lerp(sStartRGB[0], sEndRGB[0], sInterp);
         var sg = lerp(sStartRGB[1], sEndRGB[1], sInterp);
         var sb = lerp(sStartRGB[2], sEndRGB[2], sInterp);
@@ -1525,7 +1472,6 @@ function update_math() {
         var pb = lerp(pStartRGB[2], pEndRGB[2], pInterp);
         var pa = lerp(pStart[3] !== undefined ? pStart[3] : 1.0, pEnd[3] !== undefined ? pEnd[3] : 1.0, pInterp) * opac;
 
-        // Layout Parameters
         var tx = parseFloat(registry.get(id + "::pat_tiling_x")) || 1.0; 
         var ty = parseFloat(registry.get(id + "::pat_tiling_y")) || 1.0;
         var pIntensity = parseFloat(registry.get(id + "::pattern_intensity")); if (isNaN(pIntensity)) pIntensity = 0.0;
@@ -1537,9 +1483,8 @@ function update_math() {
         for (var j = 0; j < count; j++) {
             var ix = bx + (j * spacing * gCos), iy = by + (j * spacing * gSin);
             
-            // Push the fully calculated instance into the array
             all_instances.push({
-                z: layer, // The sorting key
+                z: layer, 
                 pos: [ix, iy, layer, rotRadians],
                 sym: [sr, sg, sb, sa],
                 pat: [pr, pg, pb, pa],
@@ -1549,20 +1494,12 @@ function update_math() {
         }
     }
 
-    // ==========================================
-    // 2. SORT BY Z-DEPTH (Painter's Algorithm)
-    // ==========================================
-    // Lowest layer values get drawn first (background)
-    // Highest layer values get drawn last (foreground)
     all_instances.sort(function(a, b) {
         return a.z - b.z;
     });
 
-    // ==========================================
-    // 3. RESIZE AND WRITE TO MATRICES
-    // ==========================================
     var total_instances = all_instances.length;
-    if (total_instances === 0) total_instances = 1; // Failsafe size
+    if (total_instances === 0) total_instances = 1; 
 
     if (total_instances !== last_total_instances) {
         matPos.dim = total_instances;
@@ -1573,13 +1510,11 @@ function update_math() {
         last_total_instances = total_instances;
     }
 
-    // Failsafe exit if array is truly empty to prevent indexing errors
     if (all_instances.length === 0) {
         matScl.setcell1d(0, 0, 0, 0, 0); 
         return;
     }
 
-    // Write the sorted data sequentially
     for (var k = 0; k < all_instances.length; k++) {
         var inst = all_instances[k];
         matPos.setcell1d(k, inst.pos[0], inst.pos[1], inst.pos[2], inst.pos[3]);
@@ -1594,7 +1529,6 @@ function update_midi_math() {
     var registry = new Dict("SigneRegistry");
     var keys = registry.getkeys();
     
-    // If empty, hide the matrix
     if (keys == null) {
         matMidiPos.dim = 1; matMidiScl.dim = 1; matMidiCol.dim = 1;
         matMidiScl.setcell1d(0, 0, 0, 0); 
@@ -1603,7 +1537,6 @@ function update_midi_math() {
     }
     if (typeof keys === "string") keys = [keys];
 
-    // Find all valid MIDI triggers
     var valid_midi_ids = [];
     var total_midi = 0;
     for (var i = 0; i < keys.length; i++) {
@@ -1644,7 +1577,6 @@ function update_midi_math() {
         var sx = parseFloat(registry.get(id + "::bounds_x"));
         if (isNaN(sx) || sx === 0) sx = parseFloat(registry.get(id + "::scale_x")) || 0.5;
 
-        // --- ADD SY FOR VERTICAL SCALING ---
         var sy = parseFloat(registry.get(id + "::bounds_y"));
         if (isNaN(sy) || sy === 0) sy = parseFloat(registry.get(id + "::scale_y")) || 0.5;
 
@@ -1656,10 +1588,7 @@ function update_midi_math() {
             var ix = bx + (j * spacing * gCos) + tOff;
             var iy = by + (j * spacing * gSin);
 
-            // Layer 0.9999 ensures it renders on top
             matMidiPos.setcell1d(current_idx, ix, iy, 0.9999);
-            
-            // --- FIX: Thin X (0.05), Tall Y (sy) ---
             matMidiScl.setcell1d(current_idx, 0.05, sy, 1.0); 
             matMidiCol.setcell1d(current_idx, finalColor[0], finalColor[1], finalColor[2], 1.0);
 
@@ -1679,7 +1608,6 @@ function update_trigger_cache() {
     for (var i = 0; i < keys.length; i++) {
         var id = keys[i];
         
-        // Grab the necessary position and spacing math
         var bx = parseFloat(registry.get(id + "::x")) || 0.0;
         var tOff = parseFloat(registry.get(id + "::trigger_offset")) || 0.0;
         var count = parseInt(registry.get(id + "::count")) || 1;
@@ -1687,7 +1615,6 @@ function update_trigger_cache() {
         var gRot = parseFloat(registry.get(id + "::group_rot")) || 0.0;
         var gCos = Math.cos(-gRot * 2.0 * Math.PI);
 
-        // Calculate and cache every instance's X-coordinate
         for (var j = 0; j < count; j++) {
             var ix = bx + (j * spacing * gCos) + tOff;
             cached_midi_triggers.push({ id: id, x: ix });
@@ -1696,8 +1623,6 @@ function update_trigger_cache() {
 }
 
 function transport_tick(current_x) {
-    // Left edge of the screen is (current_x - 1.0) because the grid is 0-indexed.
-    // The true world position is just the left edge + the exact bar offset!
     var offset_x = (current_x - 1.0) + globalPlayheadOffset;
 
     if (last_playhead_x < 0) { last_playhead_x = offset_x; return; }
@@ -1719,17 +1644,11 @@ function transport_tick(current_x) {
     last_playhead_x = offset_x;
 }
 
-// =========================================================
-// PROPERTIES WINDOW BROADCASTER
-// =========================================================
 function update_properties_window(id) {
     var registry = new Dict("SigneRegistry");
 
-    // --- Tell the Properties Window the target's name ---
     messnamed("SelectedObjectName", id);
 
-    // --- TELL PROPERTIES WINDOW WHICH UI TO SHOW ---
-    // Check if the object has text properties. If yes, output 1. If no, output 0.
     var isText = registry.contains(id + "::text_content") ? 1 : 0;
     messnamed("SelectedObjectIsText", isText);
 
@@ -1750,13 +1669,12 @@ function update_properties_window(id) {
             var g = val[1] !== undefined ? val[1] : 1.0;
             var b = val[2] !== undefined ? val[2] : 1.0;
             var a = val[3] !== undefined ? val[3] : 1.0;
-            messnamed(rx_name, r, g, b, a); // Sends list: R G B A
+            messnamed(rx_name, r, g, b, a); 
         }
     }
 
     push_float("locked", "ObjectIsLocked_FromSymbol");
 
-    // --- SYMBOL MAPPINGS ---
     push_color("symbol_colour_start_rgb", "Colour_StartRGB_FromObject");
     push_float("symbol_colour_start_sat", "Colour_StartSaturation_FromObject");
     push_color("symbol_colour_end_rgb", "Colour_EndRGB_FromObject");
@@ -1766,7 +1684,6 @@ function update_properties_window(id) {
     push_string("symbol_category", "ObjectCategoryFolderName_FromSymbol");
     push_string("symbol_texture", "SymbolTexture_FromObject");
 
-    // --- PATTERN MAPPINGS ---
     push_color("pattern_colour_start_rgb", "Colour_Pattern_StartRGB_FromObject");
     push_float("pattern_colour_start_sat", "Colour_Pattern_StartSaturation_FromObject");
     push_color("pattern_colour_end_rgb", "Colour_Pattern_EndRGB_FromObject");
@@ -1778,7 +1695,6 @@ function update_properties_window(id) {
     push_string("pattern_category", "PatternCategoryFolderName_FromSymbol");
     push_string("pattern_texture", "PatternTexture_FromObject");
 
-    // --- MIDI MAPPINGS ---
     push_float("midi_trigger_state", "MIDITriggerStateFromObject");
     push_color("midi_trigger_rgb", "MIDITrigger_RGB_FromObject");
     push_float("midi_trigger_sat", "MIDITrigger_Saturation_FromObject");
@@ -1787,7 +1703,6 @@ function update_properties_window(id) {
     push_float("trigger_offset", "MIDITrigger_Offset_FromObject");
     push_float("midi_trigger_duration", "MIDITrigger_Duration_FromObject");
 
-    // --- TEXT MAPPINGS ---
     push_float("text_italic", "TextItalic_FromObject");
     push_float("text_bold", "TextBold_FromObject");
     push_float("text_spacing", "TextSpacing_FromObject");
