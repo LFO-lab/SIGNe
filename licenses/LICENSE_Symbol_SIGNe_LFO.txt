@@ -1,7 +1,20 @@
 VERSION FRANÇAISELICENCE DES MÉDIAS ET SYMBOLES — LFO
-Les fichiers graphiques et symboles contenus dans ce dossier spécifique ont été créés par l'équipe du projet SIGN/e au sein du Laboratoire formes • ondes (LFO).
-Ces fichiers sont mis à disposition sous la licence Creative Commons Zero (CC0 1.0 Universel) – Transfert dans le Domaine Public.En vertu de cette licence, les auteurs ont renoncé à l'ensemble de leurs droits d'auteur et droits voisins sur ces fichiers. Vous êtes libre de copier, modifier, distribuer et utiliser ces éléments, y compris à des fins commerciales, sans avoir besoin de demander une autorisation ou de créditer les auteurs.
-Pour consulter le résumé explicatif ou le code juridique complet de cette licence, visitez : https://creativecommons.org/publicdomain/zero/1.0/deed.fr--------------------------------ENGLISH VERSIONMEDIA AND SYMBOLS LICENSE — LFO
-The graphic files and symbols contained in this specific folder were created by the SIGN/e project team within the Laboratoire formes • ondes (LFO).
+Les fichiers graphiques et symboles contenus dans les dossiers
+SIGNe/symbols/0_Default
+SIGNe/symbols/1_Shapes
+SIGNe/symbols/2_Waveshapes 
+SIGNe/symbols/3_Direction
+ont été créés par l'équipe du projet SIGN/e au sein du Laboratoire formes • ondes (LFO).
+Ces fichiers sont mis à disposition sous la licence Creative Commons Zero (CC0 1.0 Universel) – Transfert dans le Domaine Public.
+En vertu de cette licence, les auteurs ont renoncé à l'ensemble de leurs droits d'auteur et droits voisins sur ces fichiers. Vous êtes libre de copier, modifier, distribuer et utiliser ces éléments, y compris à des fins commerciales, sans avoir besoin de demander une autorisation ou de créditer les auteurs.
+Pour consulter le résumé explicatif ou le code juridique complet de cette licence, visitez : https://creativecommons.org/publicdomain/zero/1.0/deed.fr
+
+--------------------------------ENGLISH VERSIONMEDIA AND SYMBOLS LICENSE — LFO
+The graphic files and symbols contained in the folders 
+SIGNe/symbols/0_Default
+SIGNe/symbols/1_Shapes
+SIGNe/symbols/2_Waveshapes 
+SIGNe/symbols/3_Direction 
+were created by the SIGN/e project team within the Laboratoire formes • ondes (LFO).
 These files are made available under the Creative Commons Zero (CC0 1.0 Universal) – Public Domain Dedication.Under this license, the authors have dedicated the work to the public domain by waiving all of their rights to the work worldwide under copyright law, including all related and neighboring rights. You can copy, modify, distribute and perform the work, even for commercial purposes, all without asking permission or providing attribution.
 To view a copy of the deed or the full legal code of this license, visit: https://creativecommons.org/publicdomain/zero/1.0/deed.en
