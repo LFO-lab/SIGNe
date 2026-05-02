@@ -177,6 +177,14 @@ function request_rebuild() {
     mark_dirty(1, 1, 1, 1, 1);
 }
 
+function finish_booting() {
+    is_booting = false;
+    // Now that the dictionary is completely populated, do the heavy math EXACTLY ONCE
+    draw_selections();
+    check_frustum();
+    request_rebuild(); 
+}
+
 function snap(val, quant) {
     if (quant === "free" || quant === 0 || quant === "0" || typeof quant === "undefined") return val;
     var q = parseFloat(quant);
