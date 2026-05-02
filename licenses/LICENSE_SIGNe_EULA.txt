@@ -1,0 +1,101 @@
+ VERSION FRANÇAISE
+LICENCE D'UTILISATION — SIGN/e (Version 1.0.0)
+
+© 2026 Nicolas Bernier, Evan Montpellier et Pierre-Luc Lecours. Logiciel développé au 
+sein du Laboratoire formes • ondes (LFO).
+
+AVIS AUX ARTISTES CONCERNANT VOS CRÉATIONS (Note non contractuelle) 
+Avant de lire les termes légaux du logiciel, sachez que vos œuvres vous appartiennent. La 
+licence libre (GPL) ci-dessous s'applique uniquement au code informatique de SIGN/e. 
+Elle ne s'applique en aucun cas aux partitions visuelles, à la musique ou aux fichiers 
+audio/vidéo que vous générez avec cet outil. Vous détenez 100 % des droits 
+d'exploitation (y compris commerciale) sur les œuvres créées à l'aide de SIGN/e.
+ 
+1. Licence du logiciel (Code source) 
+SIGN/e est mis à disposition sous les termes de la Licence Publique Générale GNU 
+(GNU GPL) version 3, telle que publiée par la Free Software Foundation. Vous pouvez 
+redistribuer et/ou modifier ce programme selon les termes de cette licence. Une copie de 
+la GNU GPLv3 est disponible à l'adresse suivante : https://www.gnu.org/licenses/gpl-
+3.0.fr.html
+
+2. Licence des médias et symboles 
+Les librairies de symboles créées par l'équipe SIGN/e sont mises à disposition sous 
+licence Creative Commons Zero (CC0 1.0) et sont libres de droits. Les librairies tierces 
+incluses dans le logiciel sont régies par leurs propres licences open-source respectives, 
+lesquelles sont incluses directement dans leurs dossiers spécifiques. L'utilisateur est tenu 
+de se référer à ces fichiers pour connaître les droits applicables à chaque bibliothèque 
+tierce.
+
+3. Dépendances et environnement d'exécution 
+SIGN/e est un outil conçu pour interagir avec des logiciels tiers propriétaires (Ableton 
+Live, Cycling '74 Max). Les auteurs de SIGN/e déclinent toute responsabilité quant aux 
+incompatibilités, plantages, ou interruptions de service liés aux mises à jour ou au 
+fonctionnement de ces environnements hôtes, y compris lors de performances en direct 
+ou d'installations publiques.
+
+4. Compétence juridictionnelle 
+En cas de litige ne pouvant être résolu par les termes de la GNU GPLv3, la présente 
+notice légale est régie par les lois de la province de Québec, Canada. Tout litige sera 
+soumis à la compétence exclusive des tribunaux du district de Montréal.
+
+5. EXCLUSION DE GARANTIE ET DE RESPONSABILITÉ 
+CE PROGRAMME EST DISTRIBUÉ DANS L'ESPOIR QU'IL SERA UTILE, MAIS 
+SANS AUCUNE GARANTIE ; SANS MÊME LA GARANTIE IMPLICITE DE 
+QUALITÉ MARCHANDE OU D'ADÉQUATION À UN USAGE PARTICULIER. EN 
+AUCUN CAS LES AUTEURS OU TITULAIRES DU DROIT D'AUTEUR NE 
+SERONT RESPONSABLES DE TOUT DOMMAGE, RÉCLAMATION OU AUTRE 
+RESPONSABILITÉ DÉCOULANT DE, OU EN LIEN AVEC LE LOGICIEL OU SON 
+UTILISATION. VOIR LA LICENCE PUBLIQUE GÉNÉRALE GNU POUR PLUS DE 
+DÉTAILS.
+
+_______________
+ENGLISH VERSION
+
+END USER LICENSE AGREEMENT — SIGN/e (Version 1.0.0)
+
+© 2026 Nicolas Bernier, Evan Montpellier, and Pierre-Luc Lecours. Developed within 
+the Laboratoire formes • ondes (LFO).
+
+NOTICE TO CREATORS REGARDING YOUR WORKS (Non-contractual note)
+Before reading the legal terms of the software, please note that your works belong to you. 
+The free software license (GPL) below applies only to the SIGN/e computer code. It does 
+not apply in any way to the visual scores, music, or audio/video files you generate with 
+this tool. You hold 100% of the exploitation rights (including commercial) for any works 
+created using SIGN/e.
+ 
+1. Software License (Source Code) 
+SIGN/e is made available under the terms of the GNU General Public License (GNU 
+GPL) version 3, as published by the Free Software Foundation. You may redistribute 
+and/or modify this program under the terms of this license. A copy of the GNU GPLv3 is 
+available at the following address: https://www.gnu.org/licenses/gpl-3.0.html
+
+
+2. Media and Symbols License 
+Symbol libraries created by the SIGN/e team are made available under the Creative 
+Commons Zero (CC0 1.0) license and are free of rights. Third-party libraries included in 
+the software are governed by their respective open-source licenses, which are included 
+directly within their specific folders. The user is responsible for referring to these files to 
+understand the rights applicable to each third-party library.
+
+3. Dependencies and Execution Environment 
+SIGN/e is a tool designed to interact with third-party proprietary software (Ableton Live, 
+Cycling '74 Max). The authors of SIGN/e disclaim all responsibility for any 
+incompatibilities, crashes, or service interruptions related to updates or the functioning of 
+these host environments, including during live performances or public installations.
+
+4. Governing Law and Jurisdiction 
+In the event of a dispute that cannot be resolved by the terms of the GNU GPLv3, this 
+legal notice is governed by the laws of the Province of Quebec, Canada. Any dispute 
+shall be submitted to the exclusive jurisdiction of the courts of the district of Montreal.
+
+5. DISCLAIMER OF WARRANTY AND LIMITATION OF LIABILITY 
+THIS PROGRAM IS DISTRIBUTED IN THE HOPE THAT IT WILL BE USEFUL, 
+BUT WITHOUT ANY WARRANTY; WITHOUT EVEN THE IMPLIED WARRANTY 
+OF MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE. IN NO 
+EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR 
+ANY CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM, OUT OF, OR 
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS 
+IN THE SOFTWARE. SEE THE GNU GENERAL PUBLIC LICENSE FOR MORE 
+DETAILS.
+
+
