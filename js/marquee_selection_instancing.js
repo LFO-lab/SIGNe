@@ -8,6 +8,430 @@ outlets = 11; // 0-4 for UI, 5-9 for GPU Triggers
 // =========================================================
 var is_booting = true; // --- THE NEW BOOT FLAG ---
 
+// =========================================================
+// FAST BOOT
+// =========================================================
+var _registered_count = 0;       // incremented each time a Symbol registers
+var _expected_count = 0;         // optionally set before devices load
+var _boot_settle_task = null;    // debounce timer — fires 150ms after last registration
+
+// =========================================================
+// PROFILING
+// =========================================================
+var _profile_t0 = 0;
+var _profile_enabled = true; // set to false in production
+
+function profile_mark(label) {
+    if (!_profile_enabled) return;
+    var now = (new Date()).getTime();
+    if (_profile_t0 === 0) _profile_t0 = now;
+    post("[SIGNE PROFILE] +" + (now - _profile_t0) + "ms  " + label + "\n");
+}
+
+function profile_reset() {
+    _profile_t0 = 0;
+}
+
+function profile_enable(v) {
+    _profile_enabled = (v !== 0);
+}
+
+// =========================================================
+// ATLAS INDEX CACHE  (built once at boot, O(1) lookups)
+// =========================================================
+var _symIndexCache = {};
+var _patIndexCache = {};
+
+function _build_atlas_index_cache() {
+    profile_mark("_build_atlas_index_cache: start");
+    _symIndexCache = {};
+    _patIndexCache = {};
+    profile_mark("_build_atlas_index_cache: opening dict");
+    var manifest = new Dict("AtlasManifest");
+    profile_mark("_build_atlas_index_cache: getting symbols");
+    var symArray = manifest.get("symbols");
+    profile_mark("_build_atlas_index_cache: got symbols (" + (symArray ? symArray.length : 0) + ")");
+    if (symArray != null) {
+        if (typeof symArray === "string") symArray = [symArray];
+        for (var i = 0; i < symArray.length; i++) _symIndexCache[symArray[i]] = i;
+    }
+    profile_mark("_build_atlas_index_cache: getting patterns");
+    var patArray = manifest.get("patterns");
+    profile_mark("_build_atlas_index_cache: got patterns (" + (patArray ? patArray.length : 0) + ")");
+    if (patArray != null) {
+        if (typeof patArray === "string") patArray = [patArray];
+        for (var i = 0; i < patArray.length; i++) _patIndexCache[patArray[i]] = i;
+    }
+    profile_mark("_build_atlas_index_cache: complete sym=" + Object.keys(_symIndexCache).length + " pat=" + Object.keys(_patIndexCache).length);
+}
+
+// Call after atlas is rebuilt (e.g. after build_atlases completes)
+function rebuild_atlas_cache() {
+    _build_atlas_index_cache();
+    if (!is_booting) mark_dirty(1, 1, 1, 1, 1);
+}
+
+// =========================================================
+// ATLAS BUILD + CACHE (merged from atlas_builder.js)
+// =========================================================
+// ─────────────────────────────────────────────────────────────────────────────
+// GPU TEXTURES
+// ─────────────────────────────────────────────────────────────────────────────
+var texSymbols = new JitterObject("jit.gl.texture", "SIGNe");
+texSymbols.name = "SymbolAtlas";
+texSymbols.filter = "none";
+
+var texPatterns = new JitterObject("jit.gl.texture", "SIGNe");
+texPatterns.name = "PatternAtlas";
+texPatterns.filter = "none";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MANIFEST DICTIONARY
+// ─────────────────────────────────────────────────────────────────────────────
+var atlasDict = new Dict("AtlasManifest");
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CACHE STATE
+// ─────────────────────────────────────────────────────────────────────────────
+var _cacheDir = "";
+var _symCachePath = "";
+var _patCachePath = "";
+var _manifestCachePath = "";
+var _lastFolderPath = "";
+
+function _set_cache_paths(signeFolderPath) {
+    _cacheDir = signeFolderPath + "/cache";
+    _symCachePath = _cacheDir + "/SymbolAtlas.jxf";
+    _patCachePath = _cacheDir + "/PatternAtlas.jxf";
+    _manifestCachePath = _cacheDir + "/atlas_manifest.json";
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MAIN ENTRY POINT
+// ─────────────────────────────────────────────────────────────────────────────
+function build_atlases(signeFolderPath) {
+    profile_mark("build_atlases: start");
+    if (signeFolderPath.charAt(signeFolderPath.length - 1) === "/") {
+        signeFolderPath = signeFolderPath.slice(0, -1);
+    }
+    _lastFolderPath = signeFolderPath;
+    _set_cache_paths(signeFolderPath);
+
+    var symFiles = []; var symNames = [];
+    var patFiles = []; var patNames = [];
+    profile_mark("build_atlases: scanning folders");
+    get_images_recursive(signeFolderPath + "/symbols", symFiles, symNames);
+    get_images_recursive(signeFolderPath + "/patterns", patFiles, patNames);
+    profile_mark("build_atlases: scan done (" + symFiles.length + " sym, " + patFiles.length + " pat)");
+
+    if (symFiles.length === 0 && patFiles.length === 0) {
+        post("atlas_builder: no images found in " + signeFolderPath + "\n");
+        outlet(0, "bang");
+        return;
+    }
+
+    var currentManifest = _build_manifest(symFiles, symNames, patFiles, patNames);
+    profile_mark("build_atlases: manifest built");
+
+    if (_try_load_cache(currentManifest, symFiles, symNames, patFiles, patNames)) {
+        post("atlas_builder: loaded from cache (" + symFiles.length + " symbols, " + patFiles.length + " patterns)\n");
+        profile_mark("build_atlases: cache load complete");
+        outlet(0, "bang");
+        return;
+    }
+
+    post("atlas_builder: building atlas (" + symFiles.length + " symbols, " + patFiles.length + " patterns)...\n");
+    profile_mark("build_atlases: importmovie loop start");
+    _build_and_cache(symFiles, symNames, patFiles, patNames, currentManifest);
+    profile_mark("build_atlases: build+cache complete");
+    post("atlas_builder: done\n");
+    outlet(0, "bang");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MANIFEST — filename only, no size scan
+// Detects additions, removals, renames. Use force_rebuild for same-name replacements.
+// ─────────────────────────────────────────────────────────────────────────────
+function _build_manifest(symFiles, symNames, patFiles, patNames) {
+    var m = { symbols: [], patterns: [] };
+    for (var i = 0; i < symFiles.length; i++) m.symbols.push({ name: symNames[i] });
+    for (var i = 0; i < patFiles.length; i++) m.patterns.push({ name: patNames[i] });
+    return m;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CACHE LOAD
+// ─────────────────────────────────────────────────────────────────────────────
+function _try_load_cache(currentManifest, symFiles, symNames, patFiles, patNames) {
+    if (!_file_exists(_symCachePath) || !_file_exists(_patCachePath) || !_file_exists(_manifestCachePath)) {
+        return false;
+    }
+
+    var savedManifest = _read_json(_manifestCachePath);
+    if (!savedManifest) return false;
+
+    if (!_manifests_equal(savedManifest, currentManifest)) {
+        post("atlas_builder: cache invalid (files changed)\n");
+        return false;
+    }
+
+    profile_mark("build_atlases: cache valid, loading 3D matrices");
+
+    // Load 3D matrices from .jxf cache files
+    var symMatrix = _load_jxf(_symCachePath, symFiles.length);
+    if (!symMatrix) { post("atlas_builder: sym cache load failed\n"); return false; }
+
+    var patMatrix = _load_jxf(_patCachePath, patFiles.length);
+    if (!patMatrix) { post("atlas_builder: pat cache load failed\n"); return false; }
+
+    // Push to GPU
+    texSymbols.dim = [512, 512, symFiles.length];
+    texSymbols.jit_matrix(symMatrix.name);
+    texPatterns.dim = [512, 512, patFiles.length];
+    texPatterns.jit_matrix(patMatrix.name);
+
+    atlasDict.set("symbols", symNames);
+    atlasDict.set("patterns", patNames);
+
+    // Build index cache immediately
+    _build_atlas_index_cache();
+    return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FULL BUILD + CACHE SAVE
+// ─────────────────────────────────────────────────────────────────────────────
+function _build_and_cache(symFiles, symNames, patFiles, patNames, manifest) {
+    var symMatrix = _build_atlas_matrix(symFiles);
+    var patMatrix = _build_atlas_matrix(patFiles);
+
+    texSymbols.dim = [512, 512, symFiles.length];
+    texSymbols.jit_matrix(symMatrix.name);
+    texPatterns.dim = [512, 512, patFiles.length];
+    texPatterns.jit_matrix(patMatrix.name);
+
+    atlasDict.set("symbols", symNames);
+    atlasDict.set("patterns", patNames);
+
+    // Build index cache immediately
+    _build_atlas_index_cache();
+
+    // Save 3D matrices to cache
+    _save_jxf(symMatrix, _symCachePath);
+    _save_jxf(patMatrix, _patCachePath);
+    _write_json(_manifestCachePath, manifest);
+}
+
+function _build_atlas_matrix(filePaths) {
+    var atlas3D = new JitterMatrix(4, "char", 512, 512, filePaths.length);
+    atlas3D.usedstdim = 1;
+    var cookieCutter = new JitterMatrix(4, "char", 512, 512);
+    cookieCutter.adapt = 0;
+    var t0 = (new Date()).getTime();
+    for (var i = 0; i < filePaths.length; i++) {
+        cookieCutter.importmovie(filePaths[i]);
+        atlas3D.dstdimstart = [0, 0, i];
+        atlas3D.dstdimend = [511, 511, i];
+        atlas3D.frommatrix(cookieCutter);
+    }
+    var elapsed = (new Date()).getTime() - t0;
+    profile_mark("_build_atlas_matrix: " + filePaths.length + " files in " + elapsed + "ms (" + Math.round(elapsed / filePaths.length) + "ms/file avg)");
+    return atlas3D;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// JXF SAVE/LOAD via temp file + File byte copy
+//
+// JitterMatrix.write(name) saves a .jxf to Max's search path (not an absolute
+// path). We save to a known temp name, then copy the bytes to the absolute
+// cache path using Max's File object, which does handle absolute paths.
+// Loading reverses the process.
+// ─────────────────────────────────────────────────────────────────────────────
+// Max's 'write' message saves to its resource folder, not the search path.
+// We use the full absolute path so File can read it back.
+var _maxResourcePath = "C:/ProgramData/Ableton/Live 12 Suite/Resources/Max/";
+var _tmpSaveName = "signe_atlas_save.jxf";
+var _tmpLoadName = "signe_atlas_load.jxf";
+var _tmpSaveFullPath = _maxResourcePath + _tmpSaveName;
+var _tmpLoadFullPath = _maxResourcePath + _tmpLoadName;
+
+function _save_jxf(matrix, absolutePath) {
+    try {
+        // matrix.write() is a Max message, not a JS method.
+        // Use messnamed to send the write message to the named jit.matrix object.
+        // This saves to Max's default file location (search path).
+        messnamed(matrix.name, "write", _tmpSaveName); // writes to Max resource folder
+
+        // Give Max one tick to complete the write before we try to read it back.
+        // We use a small busy-wait — not ideal but JitterMatrix write is synchronous.
+        // In practice messnamed is synchronous for file operations.
+        var src = new File(_tmpSaveFullPath, "read", "binary");
+        if (!src.isopen) {
+            post("atlas_builder: could not read temp file at " + _tmpSaveFullPath + "\n");
+            return false;
+        }
+
+        var dst = new File(absolutePath, "write", "binary");
+        if (!dst.isopen) {
+            src.close();
+            post("atlas_builder: could not write to " + absolutePath + "\n");
+            post("atlas_builder: ensure the cache/ folder exists in your SIGNe directory\n");
+            return false;
+        }
+
+        while (!src.eof) {
+            var chunk = src.readbytes(65536);
+            dst.writebytes(chunk, chunk.length);
+        }
+        src.close();
+        dst.close();
+        profile_mark("_save_jxf: saved to " + absolutePath);
+        return true;
+    } catch(e) {
+        post("atlas_builder: _save_jxf error: " + e + "\n");
+        return false;
+    }
+}
+
+function _load_jxf(absolutePath, depth) {
+    try {
+        // Copy bytes from absolute cache path into Max's search path via temp file
+        var src = new File(absolutePath, "read", "binary");
+        if (!src.isopen) return null;
+
+        var dst = new File(_tmpLoadFullPath, "write", "binary");
+        if (!dst.isopen) { src.close(); return null; }
+
+        while (!src.eof) {
+            var chunk = src.readbytes(65536);
+            dst.writebytes(chunk, chunk.length);
+        }
+        src.close();
+        dst.close();
+
+        // Use messnamed to send read message to the named jit.matrix object
+        var m = new JitterMatrix(4, "char", 512, 512, depth);
+        messnamed(m.name, "read", _tmpLoadName);
+        profile_mark("_load_jxf: loaded from " + absolutePath);
+        return m;
+    } catch(e) {
+        post("atlas_builder: _load_jxf error: " + e + "\n");
+        return null;
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MANIFEST COMPARISON
+// ─────────────────────────────────────────────────────────────────────────────
+function _manifests_equal(a, b) {
+    if (!a || !b) return false;
+    if (!_manifest_arrays_equal(a.symbols, b.symbols)) return false;
+    if (!_manifest_arrays_equal(a.patterns, b.patterns)) return false;
+    return true;
+}
+
+function _manifest_arrays_equal(a, b) {
+    if (!a || !b) return false;
+    if (a.length !== b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+        if (a[i].name !== b[i].name) return false;
+    }
+    return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FILE UTILITIES
+// ─────────────────────────────────────────────────────────────────────────────
+function _file_exists(path) {
+    try {
+        var f = new File(path, "read");
+        if (f.isopen) { f.close(); return true; }
+    } catch(e) {}
+    return false;
+}
+
+function _read_json(path) {
+    try {
+        var f = new File(path, "read");
+        if (!f.isopen) return null;
+        var lines = [];
+        while (!f.eof) lines.push(f.readline());
+        f.close();
+        return JSON.parse(lines.join("\n").trim());
+    } catch(e) {
+        post("atlas_builder: could not read manifest: " + e + "\n");
+        return null;
+    }
+}
+
+function _write_json(path, obj) {
+    try {
+        var f = new File(path, "write");
+        if (!f.isopen) {
+            post("atlas_builder: could not write manifest to " + path + "\n");
+            post("atlas_builder: ensure the cache/ folder exists in your SIGNe directory\n");
+            return;
+        }
+        f.writeline(JSON.stringify(obj));
+        f.close();
+    } catch(e) {
+        post("atlas_builder: error writing manifest: " + e + "\n");
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RECURSIVE FOLDER SCAN
+// ─────────────────────────────────────────────────────────────────────────────
+function get_images_recursive(path, pathArray, nameArray) {
+    var f = new Folder(path);
+    while (!f.end) {
+        if (f.filetype === "fold") {
+            if (f.filename !== "." && f.filename !== "..") {
+                get_images_recursive(path + "/" + f.filename, pathArray, nameArray);
+            }
+        } else {
+            var ext = f.filename.split('.').pop().toLowerCase();
+            if (ext === "png" || ext === "jpg" || ext === "jpeg") {
+                pathArray.push(path + "/" + f.filename);
+                nameArray.push(f.filename.replace(/\.[^/.]+$/, ""));
+            }
+        }
+        f.next();
+    }
+    f.close();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// FORCE REBUILD — bypasses cache, always does full build
+// Can be called with no argument after build_atlases has run once
+// ─────────────────────────────────────────────────────────────────────────────
+function force_rebuild(signeFolderPath) {
+    if (signeFolderPath === undefined || signeFolderPath === "") {
+        if (_lastFolderPath === "") {
+            post("atlas_builder: force_rebuild called before build_atlases — no path known\n");
+            return;
+        }
+        signeFolderPath = _lastFolderPath;
+    }
+    if (signeFolderPath.charAt(signeFolderPath.length - 1) === "/") {
+        signeFolderPath = signeFolderPath.slice(0, -1);
+    }
+    _lastFolderPath = signeFolderPath;
+    _set_cache_paths(signeFolderPath);
+
+    var symFiles = []; var symNames = [];
+    var patFiles = []; var patNames = [];
+    get_images_recursive(signeFolderPath + "/symbols", symFiles, symNames);
+    get_images_recursive(signeFolderPath + "/patterns", patFiles, patNames);
+    var manifest = _build_manifest(symFiles, symNames, patFiles, patNames);
+    post("atlas_builder: force rebuild (" + symFiles.length + " symbols, " + patFiles.length + " patterns)...\n");
+    _build_and_cache(symFiles, symNames, patFiles, patNames, manifest);
+    post("atlas_builder: force rebuild done\n");
+    outlet(0, "bang");
+}
+
+
 var ignoreX = false, ignoreY = false;
 var isDraggingMarquee = false, isDraggingGroup = false, isScalingGroup = false;
 var isRotatingGroup = false, isAdjustingOpacityGroup = false, isScrubbing = false; 
@@ -65,6 +489,8 @@ var dirty_midi = false;
 var needs_recalc = false;
 
 function loadbang() {
+    profile_reset();
+    profile_mark("loadbang");
     // Force the UI into its empty, hidden state immediately on boot
     messnamed("SelectedObjectName", "none"); 
     messnamed("SelectedObjectIndex_FromSymbol", -1); 
@@ -72,13 +498,58 @@ function loadbang() {
     messnamed("SelectedObjectIsText", -1);
 }
 
-// --- THE NEW UNLOCK FUNCTION ---
-function finish_booting() {
+// ─────────────────────────────────────────────────────────────────────────────
+// FAST BOOT — count-based, no fixed delays
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Called by the patch to declare how many Symbol devices to expect.
+// Send this from live.thisdevice in Screen BEFORE devices start loading.
+// Optional but enables instant boot without the 150ms debounce.
+function set_expected_device_count(n) {
+    _expected_count = parseInt(n) || 0;
+    _registered_count = 0;
+    profile_mark("set_expected_device_count: " + _expected_count);
+}
+
+// Called once per Symbol when it finishes writing its initial data to SigneRegistry.
+// Wire: in Symbol, after the register message fires, also send notify_device_registered
+// to the js object in Screen's p MarqueeSelection.
+function notify_device_registered() {
+    _registered_count++;
+    profile_mark("notify_device_registered: " + _registered_count + "/" + _expected_count);
+
+    if (_expected_count > 0 && _registered_count >= _expected_count) {
+        _do_boot();
+        return;
+    }
+    // Debounce: wait 150ms after last registration before booting
+    if (_boot_settle_task !== null) _boot_settle_task.cancel();
+    _boot_settle_task = new Task(function() {
+        if (is_booting) _do_boot();
+    });
+    _boot_settle_task.schedule(150);
+}
+
+function _do_boot() {
+    if (!is_booting) return;
     is_booting = false;
-    // Now that the dictionary is completely populated, do the heavy math EXACTLY ONCE
+    if (_boot_settle_task !== null) { _boot_settle_task.cancel(); _boot_settle_task = null; }
+    profile_mark("_do_boot: building atlas cache");
+    _build_atlas_index_cache();
+    profile_mark("_do_boot: draw_selections");
     draw_selections();
+    profile_mark("_do_boot: check_frustum");
     check_frustum();
-    request_rebuild(); 
+    profile_mark("_do_boot: request_rebuild");
+    request_rebuild();
+    profile_mark("_do_boot: COMPLETE");
+}
+
+// Legacy fallback — patch can still send finish_booting (e.g. from existing delay path)
+function finish_booting() {
+    profile_mark("finish_booting called (is_booting=" + is_booting + ")");
+    if (!is_booting) return;
+    _do_boot();
 }
 
 function mark_dirty(pos, sym, pat, scl, til) {
@@ -99,9 +570,13 @@ function bang() {
     var pushed = false; 
 
     if (needs_recalc) {
+        profile_mark("bang: update_math start");
         update_math();
+        profile_mark("bang: update_midi_math start");
         update_midi_math();
+        profile_mark("bang: update_trigger_cache start");
         update_trigger_cache();
+        profile_mark("bang: recalc done");
         needs_recalc = false;
     }
     
@@ -1369,8 +1844,6 @@ function draw_selections() {
 
 function update_math() {
     var registry = new Dict("SigneRegistry");
-    var manifest = new Dict("AtlasManifest"); 
-    
     var keys = registry.getkeys();
     
     if (keys == null) {
@@ -1401,12 +1874,6 @@ function update_math() {
         return; 
     }
 
-    var symArray = manifest.get("symbols");
-    if (symArray != null && typeof symArray === "string") symArray = [symArray];
-    
-    var patArray = manifest.get("patterns");
-    if (patArray != null && typeof patArray === "string") patArray = [patArray];
-
     var all_instances = [];
 
     for (var i = 0; i < keys.length; i++) {
@@ -1421,25 +1888,21 @@ function update_math() {
         
         var symIdx = 0.0;
         var patIdx = 0.0;
-        
+
         var symName = registry.get(id + "::symbol_texture");
-        if (symName != null && symArray != null) {
+        if (symName != null) {
             var symParts = symName.split(/[\\/]/);
-            var cleanSym = symParts[symParts.length - 1].replace(/\.[^/.]+$/, ""); 
-            
-            for (var s = 0; s < symArray.length; s++) { 
-                if (symArray[s] === cleanSym) { symIdx = parseFloat(s); break; } 
-            }
+            var cleanSym = symParts[symParts.length - 1].replace(/\.[^/.]+$/, "");
+            var _si = _symIndexCache[cleanSym];
+            if (_si !== undefined) symIdx = _si;
         }
 
         var patName = registry.get(id + "::pattern_texture");
-        if (patName != null && patArray != null) {
+        if (patName != null) {
             var patParts = patName.split(/[\\/]/);
-            var cleanPat = patParts[patParts.length - 1].replace(/\.[^/.]+$/, ""); 
-            
-            for (var p = 0; p < patArray.length; p++) { 
-                if (patArray[p] === cleanPat) { patIdx = parseFloat(p); break; } 
-            }
+            var cleanPat = patParts[patParts.length - 1].replace(/\.[^/.]+$/, "");
+            var _pi = _patIndexCache[cleanPat];
+            if (_pi !== undefined) patIdx = _pi;
         }
 
         var opac = parseFloat(registry.get(id + "::opacity")); if (isNaN(opac)) opac = 1.0;
