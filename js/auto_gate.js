@@ -1,4 +1,4 @@
-autowatch = 1;
+autowatch = 0;
 outlets = 2;
 // outlet 0: gate state (1 = human/pass, 0 = automation/block)
 // outlet 1: init_done bang — fires once observers are live and ready.
@@ -119,7 +119,7 @@ function paramCallback(args) {
 function updateState() {
     var isHuman = 1;
 
-    // Block ONLY during clean automation playback
+    // Block ONLY during clean automation playback 
     if (isPlaying == 1 && isRecording == 0 && autoState == 1) {
         isHuman = 0;
     }

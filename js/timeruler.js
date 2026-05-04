@@ -1,4 +1,4 @@
-autowatch = 1;
+autowatch = 0;
 
 // --- STATE VARIABLES ---
 var transportPos = 0.0;

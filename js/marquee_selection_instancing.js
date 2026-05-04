@@ -1,4 +1,4 @@
-autowatch = 1;
+autowatch = 0;
 
 inlets = 1;
 outlets = 11; // 0-4 for UI, 5-9 for GPU Triggers
@@ -6,7 +6,6 @@ outlets = 11; // 0-4 for UI, 5-9 for GPU Triggers
 // =========================================================
 // STATE VARIABLES & SETTINGS
 // =========================================================
-var is_booting = true; // --- THE NEW BOOT FLAG ---
 
 // =========================================================
 // FAST BOOT
@@ -114,21 +113,6 @@ texPatterns.filter = "none";
 var atlasDict = new Dict("AtlasManifest");
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CACHE STATE
-// ─────────────────────────────────────────────────────────────────────────────
-var _cacheDir = "";
-var _symCachePath = "";
-var _patCachePath = "";
-var _manifestCachePath = "";
-var _lastFolderPath = "";
-
-function _set_cache_paths(signeFolderPath) {
-    _cacheDir = signeFolderPath + "/cache";
-    _symCachePath = _cacheDir + "/SymbolAtlas.jxf";
-    _patCachePath = _cacheDir + "/PatternAtlas.jxf";
-    _manifestCachePath = _cacheDir + "/atlas_manifest.json";
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN ENTRY POINT
 // ─────────────────────────────────────────────────────────────────────────────
@@ -137,8 +121,6 @@ function build_atlases(signeFolderPath) {
     if (signeFolderPath.charAt(signeFolderPath.length - 1) === "/") {
         signeFolderPath = signeFolderPath.slice(0, -1);
     }
-    _lastFolderPath = signeFolderPath;
-    _set_cache_paths(signeFolderPath);
 
     var symFiles = []; var symNames = [];
     var patFiles = []; var patNames = [];
@@ -153,82 +135,12 @@ function build_atlases(signeFolderPath) {
         return;
     }
 
-    var currentManifest = _build_manifest(symFiles, symNames, patFiles, patNames);
-    profile_mark("build_atlases: manifest built");
-
-    if (_try_load_cache(currentManifest, symFiles, symNames, patFiles, patNames)) {
-        post("atlas_builder: loaded from cache (" + symFiles.length + " symbols, " + patFiles.length + " patterns)\n");
-        profile_mark("build_atlases: cache load complete");
-        outlet(0, "bang");
-        return;
-    }
-
-    post("atlas_builder: building atlas (" + symFiles.length + " symbols, " + patFiles.length + " patterns)...\n");
+    if (_profile_enabled) post("atlas_builder: building atlas (" + symFiles.length + " symbols, " + patFiles.length + " patterns)...\n");
     profile_mark("build_atlases: importmovie loop start");
-    _build_and_cache(symFiles, symNames, patFiles, patNames, currentManifest);
-    profile_mark("build_atlases: build+cache complete");
-    post("atlas_builder: done\n");
-    outlet(0, "bang");
-}
 
-// ─────────────────────────────────────────────────────────────────────────────
-// MANIFEST — filename only, no size scan
-// Detects additions, removals, renames. Use force_rebuild for same-name replacements.
-// ─────────────────────────────────────────────────────────────────────────────
-function _build_manifest(symFiles, symNames, patFiles, patNames) {
-    var m = { symbols: [], patterns: [] };
-    for (var i = 0; i < symFiles.length; i++) m.symbols.push({ name: symNames[i] });
-    for (var i = 0; i < patFiles.length; i++) m.patterns.push({ name: patNames[i] });
-    return m;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// CACHE LOAD
-// ─────────────────────────────────────────────────────────────────────────────
-function _try_load_cache(currentManifest, symFiles, symNames, patFiles, patNames) {
-    if (!_file_exists(_symCachePath) || !_file_exists(_patCachePath) || !_file_exists(_manifestCachePath)) {
-        return false;
-    }
-
-    var savedManifest = _read_json(_manifestCachePath);
-    if (!savedManifest) return false;
-
-    if (!_manifests_equal(savedManifest, currentManifest)) {
-        post("atlas_builder: cache invalid (files changed)\n");
-        return false;
-    }
-
-    profile_mark("build_atlases: cache valid, loading 3D matrices");
-
-    // Load 3D matrices from .jxf cache files
-    var symMatrix = _load_jxf(_symCachePath, symFiles.length);
-    if (!symMatrix) { post("atlas_builder: sym cache load failed\n"); return false; }
-
-    var patMatrix = _load_jxf(_patCachePath, patFiles.length);
-    if (!patMatrix) { post("atlas_builder: pat cache load failed\n"); return false; }
-
-    // Push to GPU
-    texSymbols.dim = [512, 512, symFiles.length];
-    texSymbols.jit_matrix(symMatrix.name);
-    texPatterns.dim = [512, 512, patFiles.length];
-    texPatterns.jit_matrix(patMatrix.name);
-
-    atlasDict.set("symbols", symNames);
-    atlasDict.set("patterns", patNames);
-
-    // Build index cache immediately
-    _build_atlas_index_cache();
-    return true;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// FULL BUILD + CACHE SAVE
-// ─────────────────────────────────────────────────────────────────────────────
-function _build_and_cache(symFiles, symNames, patFiles, patNames, manifest) {
     var symMatrix = _build_atlas_matrix(symFiles, "symbols");
     var patMatrix = _build_atlas_matrix(patFiles, "patterns");
 
-
     texSymbols.dim = [512, 512, symFiles.length];
     texSymbols.jit_matrix(symMatrix.name);
     texPatterns.dim = [512, 512, patFiles.length];
@@ -237,13 +149,11 @@ function _build_and_cache(symFiles, symNames, patFiles, patNames, manifest) {
     atlasDict.set("symbols", symNames);
     atlasDict.set("patterns", patNames);
 
-    // Build index cache immediately
     _build_atlas_index_cache();
 
-    // Save 3D matrices to cache
-    _save_jxf(symMatrix, _symCachePath);
-    _save_jxf(patMatrix, _patCachePath);
-    _write_json(_manifestCachePath, manifest);
+    profile_mark("build_atlases: build complete");
+    if (_profile_enabled) post("atlas_builder: done\n");
+    outlet(0, "bang");
 }
 
 function _build_atlas_matrix(filePaths, label) {
@@ -273,135 +183,14 @@ function _build_atlas_matrix(filePaths, label) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Max's 'write' message saves to its resource folder, not the search path.
 // We use the full absolute path so File can read it back.
-var _maxResourcePath = "C:/ProgramData/Ableton/Live 12 Suite/Resources/Max/";
-var _tmpSaveName = "signe_atlas_save.jxf";
-var _tmpLoadName = "signe_atlas_load.jxf";
-var _tmpSaveFullPath = _maxResourcePath + _tmpSaveName;
-var _tmpLoadFullPath = _maxResourcePath + _tmpLoadName;
 
-function _save_jxf(matrix, absolutePath) {
-    try {
-        // matrix.write() is a Max message, not a JS method.
-        // Use messnamed to send the write message to the named jit.matrix object.
-        // This saves to Max's default file location (search path).
-        messnamed(matrix.name, "write", _tmpSaveName); // writes to Max resource folder
 
-        // Give Max one tick to complete the write before we try to read it back.
-        // We use a small busy-wait — not ideal but JitterMatrix write is synchronous.
-        // In practice messnamed is synchronous for file operations.
-        var src = new File(_tmpSaveFullPath, "read", "binary");
-        if (!src.isopen) {
-            post("atlas_builder: could not read temp file at " + _tmpSaveFullPath + "\n");
-            return false;
-        }
 
-        var dst = new File(absolutePath, "write", "binary");
-        if (!dst.isopen) {
-            src.close();
-            post("atlas_builder: could not write to " + absolutePath + "\n");
-            post("atlas_builder: ensure the cache/ folder exists in your SIGNe directory\n");
-            return false;
-        }
 
-        while (!src.eof) {
-            var chunk = src.readbytes(65536);
-            dst.writebytes(chunk, chunk.length);
-        }
-        src.close();
-        dst.close();
-        profile_mark("_save_jxf: saved to " + absolutePath);
-        return true;
-    } catch(e) {
-        post("atlas_builder: _save_jxf error: " + e + "\n");
-        return false;
-    }
-}
 
-function _load_jxf(absolutePath, depth) {
-    try {
-        // Copy bytes from absolute cache path into Max's search path via temp file
-        var src = new File(absolutePath, "read", "binary");
-        if (!src.isopen) return null;
 
-        var dst = new File(_tmpLoadFullPath, "write", "binary");
-        if (!dst.isopen) { src.close(); return null; }
 
-        while (!src.eof) {
-            var chunk = src.readbytes(65536);
-            dst.writebytes(chunk, chunk.length);
-        }
-        src.close();
-        dst.close();
 
-        // Use messnamed to send read message to the named jit.matrix object
-        var m = new JitterMatrix(4, "char", 512, 512, depth);
-        messnamed(m.name, "read", _tmpLoadName);
-        profile_mark("_load_jxf: loaded from " + absolutePath);
-        return m;
-    } catch(e) {
-        post("atlas_builder: _load_jxf error: " + e + "\n");
-        return null;
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// MANIFEST COMPARISON
-// ─────────────────────────────────────────────────────────────────────────────
-function _manifests_equal(a, b) {
-    if (!a || !b) return false;
-    if (!_manifest_arrays_equal(a.symbols, b.symbols)) return false;
-    if (!_manifest_arrays_equal(a.patterns, b.patterns)) return false;
-    return true;
-}
-
-function _manifest_arrays_equal(a, b) {
-    if (!a || !b) return false;
-    if (a.length !== b.length) return false;
-    for (var i = 0; i < a.length; i++) {
-        if (a[i].name !== b[i].name) return false;
-    }
-    return true;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// FILE UTILITIES
-// ─────────────────────────────────────────────────────────────────────────────
-function _file_exists(path) {
-    try {
-        var f = new File(path, "read");
-        if (f.isopen) { f.close(); return true; }
-    } catch(e) {}
-    return false;
-}
-
-function _read_json(path) {
-    try {
-        var f = new File(path, "read");
-        if (!f.isopen) return null;
-        var lines = [];
-        while (!f.eof) lines.push(f.readline());
-        f.close();
-        return JSON.parse(lines.join("\n").trim());
-    } catch(e) {
-        post("atlas_builder: could not read manifest: " + e + "\n");
-        return null;
-    }
-}
-
-function _write_json(path, obj) {
-    try {
-        var f = new File(path, "write");
-        if (!f.isopen) {
-            post("atlas_builder: could not write manifest to " + path + "\n");
-            post("atlas_builder: ensure the cache/ folder exists in your SIGNe directory\n");
-            return;
-        }
-        f.writeline(JSON.stringify(obj));
-        f.close();
-    } catch(e) {
-        post("atlas_builder: error writing manifest: " + e + "\n");
-    }
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // RECURSIVE FOLDER SCAN
@@ -431,86 +220,16 @@ function get_images_recursive(path, pathArray, nameArray) {
 // Can be called with no argument after build_atlases has run once
 // ─────────────────────────────────────────────────────────────────────────────
 function force_rebuild(signeFolderPath) {
-    if (signeFolderPath === undefined || signeFolderPath === "") {
-        if (_lastFolderPath === "") {
-            post("atlas_builder: force_rebuild called before build_atlases — no path known\n");
-            return;
-        }
-        signeFolderPath = _lastFolderPath;
+    if (!signeFolderPath || signeFolderPath === "") {
+        post("atlas_builder: force_rebuild requires a path argument\n");
+        return;
     }
     if (signeFolderPath.charAt(signeFolderPath.length - 1) === "/") {
         signeFolderPath = signeFolderPath.slice(0, -1);
     }
-    _lastFolderPath = signeFolderPath;
-    _set_cache_paths(signeFolderPath);
-
-    var symFiles = []; var symNames = [];
-    var patFiles = []; var patNames = [];
-    get_images_recursive(signeFolderPath + "/symbols", symFiles, symNames);
-    get_images_recursive(signeFolderPath + "/patterns", patFiles, patNames);
-    var manifest = _build_manifest(symFiles, symNames, patFiles, patNames);
-    post("atlas_builder: force rebuild (" + symFiles.length + " symbols, " + patFiles.length + " patterns)...\n");
-    _build_and_cache(symFiles, symNames, patFiles, patNames, manifest);
-    post("atlas_builder: force rebuild done\n");
-    outlet(0, "bang");
+    build_atlases(signeFolderPath);
 }
 
-
-var ignoreX = false, ignoreY = false;
-var isDraggingMarquee = false, isDraggingGroup = false, isScalingGroup = false;
-var isRotatingGroup = false, isAdjustingOpacityGroup = false, isScrubbing = false; 
-var handledClick = false, prevBtn = 0, got3DAnchor = false, lastViewportInteractionTime = 0; 
-var isAltDown = 0, isShiftDown = 0, isODown = 0, linkScale = 1, activeRatio = 1.0;
-var isCmdDown = 0;
-var globalPlayheadOffset = 0.0;
-var quantX = "free", quantY = "free", quantSpacing = "free";
-var isHumanX = 1, isHumanY = 1, isHumanSpacing = 1, snapToTrigger = 0, ROT_MAX = 1.0; 
-var winW = 1920, winH = 1080, curX = 0, curY = 0;
-var a2x = 0, a2y = 0, c2x = 0, c2y = 0, a3x = 0, a3y = 0, c3x = 0, c3y = 0;
-var groupCx = 0, groupCy = 0, lastCamX = 0, lastCamY = 0, camInitialized = false;
-var globalAspectRatio = 1.77;
-var showAllBounds = 0;
-
-// GLOBAL LIVE API OBJECT (Centralized to save memory)
-var liveViewAPI = null;
-
-// =========================================================
-// --- MIDI TRIGGERS ---
-// =========================================================
-var cached_midi_triggers = [];
-var last_playhead_x = -1.0;
-
-// =========================================================
-// --- CENTRALIZED FRUSTUM CULLING ---
-// =========================================================
-var currentFirstBar = 0.0;
-var currentLastBar = 100.0;
-
-// =========================================================
-// GPU MATRICES (SHARED GLOBAL MEMORY BINDING)
-// =========================================================
-var last_total_instances = -1;
-var last_total_midi = -1;
-
-var matPos = new JitterMatrix(4, "float32", 1); matPos.name = "SIGNe_Pos_Data";
-var matSym = new JitterMatrix(4, "float32", 1); matSym.name = "SIGNe_Sym_Data";
-var matPat = new JitterMatrix(4, "float32", 1); matPat.name = "SIGNe_Pat_Data";
-var matScl = new JitterMatrix(4, "float32", 1); matScl.name = "SIGNe_Scl_Data";
-var matTil = new JitterMatrix(3, "float32", 1); matTil.name = "SIGNe_Til_Data";
-var matMidiPos = new JitterMatrix(3, "float32", 1); matMidiPos.name = "SIGNe_MidiPos_Data";
-var matMidiScl = new JitterMatrix(3, "float32", 1); matMidiScl.name = "SIGNe_MidiScl_Data";
-var matMidiCol = new JitterMatrix(4, "float32", 1); matMidiCol.name = "SIGNe_MidiCol_Data";
-
-// =========================================================
-// SIMULTANEOUS GPU UPLOAD
-// =========================================================
-var dirty_pos = false;
-var dirty_sym = false;
-var dirty_pat = false;
-var dirty_scl = false;
-var dirty_til = false;
-var dirty_midi = false;
-var needs_recalc = false;
 
 function loadbang() {
     profile_reset();
@@ -542,6 +261,47 @@ function set_expected_device_count(n) {
 // to the js object in Screen's p MarqueeSelection.
 // Track registered IDs to ignore duplicate registrations (e.g. from Signe_RollCall)
 var _registered_ids = {};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CORE STATE VARIABLES (from original)
+// ─────────────────────────────────────────────────────────────────────────────
+var is_booting = true; // --- THE NEW BOOT FLAG ---
+var ignoreX = false, ignoreY = false;
+var isDraggingMarquee = false, isDraggingGroup = false, isScalingGroup = false;
+var isRotatingGroup = false, isAdjustingOpacityGroup = false, isScrubbing = false; 
+var handledClick = false, prevBtn = 0, got3DAnchor = false, lastViewportInteractionTime = 0; 
+var isAltDown = 0, isShiftDown = 0, isODown = 0, linkScale = 1, activeRatio = 1.0;
+var isCmdDown = 0;
+var globalPlayheadOffset = 0.0;
+var quantX = "free", quantY = "free", quantSpacing = "free";
+var isHumanX = 1, isHumanY = 1, isHumanSpacing = 1, snapToTrigger = 0, ROT_MAX = 1.0; 
+var winW = 1920, winH = 1080, curX = 0, curY = 0;
+var a2x = 0, a2y = 0, c2x = 0, c2y = 0, a3x = 0, a3y = 0, c3x = 0, c3y = 0;
+var groupCx = 0, groupCy = 0, lastCamX = 0, lastCamY = 0, camInitialized = false;
+var globalAspectRatio = 1.77;
+var showAllBounds = 0;
+var liveViewAPI = null;
+var cached_midi_triggers = [];
+var last_playhead_x = -1.0;
+var currentFirstBar = 0.0;
+var currentLastBar = 100.0;
+var last_total_instances = -1;
+var last_total_midi = -1;
+var matPos = new JitterMatrix(4, "float32", 1); matPos.name = "SIGNe_Pos_Data";
+var matSym = new JitterMatrix(4, "float32", 1); matSym.name = "SIGNe_Sym_Data";
+var matPat = new JitterMatrix(4, "float32", 1); matPat.name = "SIGNe_Pat_Data";
+var matScl = new JitterMatrix(4, "float32", 1); matScl.name = "SIGNe_Scl_Data";
+var matTil = new JitterMatrix(3, "float32", 1); matTil.name = "SIGNe_Til_Data";
+var matMidiPos = new JitterMatrix(3, "float32", 1); matMidiPos.name = "SIGNe_MidiPos_Data";
+var matMidiScl = new JitterMatrix(3, "float32", 1); matMidiScl.name = "SIGNe_MidiScl_Data";
+var matMidiCol = new JitterMatrix(4, "float32", 1); matMidiCol.name = "SIGNe_MidiCol_Data";
+var dirty_pos = false;
+var dirty_sym = false;
+var dirty_pat = false;
+var dirty_scl = false;
+var dirty_til = false;
+var dirty_midi = false;
+var needs_recalc = false;
 
 function notify_device_registered(id) {
     // If called without an id, just count (legacy path)
