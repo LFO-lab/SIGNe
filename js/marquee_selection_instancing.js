@@ -19,7 +19,7 @@ var _boot_settle_task = null;    // debounce timer — fires 150ms after last re
 // PROFILING
 // =========================================================
 var _profile_t0 = 0;
-var _profile_enabled = true; // set to false in production
+var _profile_enabled = false; // set to false in production
 
 function profile_mark(label) {
     if (!_profile_enabled) return;
@@ -34,6 +34,29 @@ function profile_reset() {
 
 function profile_enable(v) {
     _profile_enabled = (v !== 0);
+}
+
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SYMBOL-SIDE PROFILING
+// Called via s Signe_Hub from SIGNe-Symbol patch.
+//
+// Wire these message boxes in Symbol's CONFIG subpatcher to s Signe_Hub:
+//
+//   symbol_profile ---Object live_thisdevice   (from live.thisdevice)
+//   symbol_profile ---Object register          (from register ---Object message)
+//   symbol_profile ---Object object_init       (from r ---Object_Init)
+//   symbol_profile ---Object auto_gate_done    (from auto_gate.js outlet 0 first output)
+//
+// In each case, use a sprintf or pack to substitute the actual object ID
+// for ---Object. e.g.:
+//   sprintf "symbol_profile %s live_thisdevice" ---Object → s Signe_Hub
+// ─────────────────────────────────────────────────────────────────────────────
+function symbol_profile(id, label) {
+    if (!_profile_enabled) return;
+    var l = (label !== undefined) ? label : "event";
+    profile_mark("Symbol " + id + ": " + l);
 }
 
 // =========================================================
@@ -202,8 +225,9 @@ function _try_load_cache(currentManifest, symFiles, symNames, patFiles, patNames
 // FULL BUILD + CACHE SAVE
 // ─────────────────────────────────────────────────────────────────────────────
 function _build_and_cache(symFiles, symNames, patFiles, patNames, manifest) {
-    var symMatrix = _build_atlas_matrix(symFiles);
-    var patMatrix = _build_atlas_matrix(patFiles);
+    var symMatrix = _build_atlas_matrix(symFiles, "symbols");
+    var patMatrix = _build_atlas_matrix(patFiles, "patterns");
+
 
     texSymbols.dim = [512, 512, symFiles.length];
     texSymbols.jit_matrix(symMatrix.name);
@@ -222,7 +246,7 @@ function _build_and_cache(symFiles, symNames, patFiles, patNames, manifest) {
     _write_json(_manifestCachePath, manifest);
 }
 
-function _build_atlas_matrix(filePaths) {
+function _build_atlas_matrix(filePaths, label) {
     var atlas3D = new JitterMatrix(4, "char", 512, 512, filePaths.length);
     atlas3D.usedstdim = 1;
     var cookieCutter = new JitterMatrix(4, "char", 512, 512);
@@ -491,6 +515,7 @@ var needs_recalc = false;
 function loadbang() {
     profile_reset();
     profile_mark("loadbang");
+
     // Force the UI into its empty, hidden state immediately on boot
     messnamed("SelectedObjectName", "none"); 
     messnamed("SelectedObjectIndex_FromSymbol", -1); 
@@ -508,15 +533,27 @@ function loadbang() {
 function set_expected_device_count(n) {
     _expected_count = parseInt(n) || 0;
     _registered_count = 0;
+    _registered_ids = {};
     profile_mark("set_expected_device_count: " + _expected_count);
 }
 
 // Called once per Symbol when it finishes writing its initial data to SigneRegistry.
 // Wire: in Symbol, after the register message fires, also send notify_device_registered
 // to the js object in Screen's p MarqueeSelection.
-function notify_device_registered() {
+// Track registered IDs to ignore duplicate registrations (e.g. from Signe_RollCall)
+var _registered_ids = {};
+
+function notify_device_registered(id) {
+    // If called without an id, just count (legacy path)
+    if (id !== undefined && id !== null) {
+        if (_registered_ids[id]) return; // already registered, ignore
+        _registered_ids[id] = true;
+    }
+
     _registered_count++;
     profile_mark("notify_device_registered: " + _registered_count + "/" + _expected_count);
+
+
 
     if (_expected_count > 0 && _registered_count >= _expected_count) {
         _do_boot();
@@ -543,6 +580,8 @@ function _do_boot() {
     profile_mark("_do_boot: request_rebuild");
     request_rebuild();
     profile_mark("_do_boot: COMPLETE");
+
+
 }
 
 // Legacy fallback — patch can still send finish_booting (e.g. from existing delay path)
