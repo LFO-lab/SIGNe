@@ -2,26 +2,84 @@
 	"patcher" : 	{
 		"fileversion" : 1,
 		"appversion" : 		{
-			"major" : 9,
-			"minor" : 0,
-			"revision" : 9,
+			"major" : 8,
+			"minor" : 5,
+			"revision" : 8,
 			"architecture" : "x64",
 			"modernui" : 1
 		}
 ,
 		"classnamespace" : "box",
 		"rect" : [ -1562.0, -1186.0, 1037.0, 340.0 ],
+		"bglocked" : 0,
+		"openinpresentation" : 0,
+		"default_fontsize" : 12.0,
+		"default_fontface" : 0,
+		"default_fontname" : "Arial",
 		"gridonopen" : 2,
 		"gridsize" : [ 15.0, 15.0 ],
 		"gridsnaponopen" : 2,
 		"objectsnaponopen" : 0,
+		"statusbarvisible" : 2,
+		"toolbarvisible" : 1,
+		"lefttoolbarpinned" : 0,
+		"toptoolbarpinned" : 0,
+		"righttoolbarpinned" : 0,
+		"bottomtoolbarpinned" : 0,
+		"toolbars_unpinned_last_save" : 0,
+		"tallnewobj" : 0,
+		"boxanimatetime" : 200,
+		"enablehscroll" : 1,
+		"enablevscroll" : 1,
+		"devicewidth" : 0.0,
+		"description" : "",
+		"digest" : "",
+		"tags" : "",
+		"style" : "",
+		"subpatcher_template" : "",
+		"assistshowspatchername" : 0,
 		"boxes" : [ 			{
+				"box" : 				{
+					"id" : "obj-5",
+					"maxclass" : "newobj",
+					"numinlets" : 1,
+					"numoutlets" : 0,
+					"patching_rect" : [ 705.0, 240.0, 171.0, 22.0 ],
+					"text" : "s ---PathToBackgroundsFolder"
+				}
+
+			}
+, 			{
+				"box" : 				{
+					"id" : "obj-6",
+					"maxclass" : "newobj",
+					"numinlets" : 1,
+					"numoutlets" : 1,
+					"outlettype" : [ "" ],
+					"patching_rect" : [ 705.0, 210.0, 57.0, 22.0 ],
+					"text" : "tosymbol"
+				}
+
+			}
+, 			{
+				"box" : 				{
+					"id" : "obj-7",
+					"maxclass" : "newobj",
+					"numinlets" : 1,
+					"numoutlets" : 1,
+					"outlettype" : [ "" ],
+					"patching_rect" : [ 705.0, 180.0, 130.0, 22.0 ],
+					"text" : "sprintf %sbackgrounds"
+				}
+
+			}
+, 			{
 				"box" : 				{
 					"id" : "obj-4",
 					"maxclass" : "newobj",
 					"numinlets" : 1,
 					"numoutlets" : 0,
-					"patching_rect" : [ 750.0, 240.0, 150.0, 22.0 ],
+					"patching_rect" : [ 540.0, 240.0, 150.0, 22.0 ],
 					"text" : "s ---PathToCommonFolder"
 				}
 
@@ -33,7 +91,7 @@
 					"numinlets" : 1,
 					"numoutlets" : 1,
 					"outlettype" : [ "" ],
-					"patching_rect" : [ 750.0, 210.0, 57.0, 22.0 ],
+					"patching_rect" : [ 540.0, 210.0, 57.0, 22.0 ],
 					"text" : "tosymbol"
 				}
 
@@ -45,7 +103,7 @@
 					"numinlets" : 1,
 					"numoutlets" : 1,
 					"outlettype" : [ "" ],
-					"patching_rect" : [ 750.0, 180.0, 107.0, 22.0 ],
+					"patching_rect" : [ 540.0, 180.0, 107.0, 22.0 ],
 					"text" : "sprintf %scommon"
 				}
 
@@ -68,7 +126,7 @@
 					"numinlets" : 1,
 					"numoutlets" : 1,
 					"outlettype" : [ "" ],
-					"patching_rect" : [ 585.0, 210.0, 57.0, 22.0 ],
+					"patching_rect" : [ 375.0, 210.0, 57.0, 22.0 ],
 					"text" : "tosymbol"
 				}
 
@@ -79,7 +137,7 @@
 					"maxclass" : "newobj",
 					"numinlets" : 1,
 					"numoutlets" : 0,
-					"patching_rect" : [ 585.0, 240.0, 153.178571283817291, 22.0 ],
+					"patching_rect" : [ 375.0, 240.0, 153.178571283817291, 22.0 ],
 					"text" : "s ---PathToMeshesFolder"
 				}
 
@@ -91,7 +149,7 @@
 					"numinlets" : 1,
 					"numoutlets" : 1,
 					"outlettype" : [ "" ],
-					"patching_rect" : [ 584.821428716182709, 180.0, 120.178571283817291, 22.0 ],
+					"patching_rect" : [ 374.821428716182709, 180.0, 120.178571283817291, 22.0 ],
 					"text" : "sprintf %smeshes"
 				}
 
@@ -103,7 +161,7 @@
 					"numinlets" : 1,
 					"numoutlets" : 1,
 					"outlettype" : [ "" ],
-					"patching_rect" : [ 345.0, 210.0, 57.0, 22.0 ],
+					"patching_rect" : [ 210.0, 210.0, 57.0, 22.0 ],
 					"text" : "tosymbol"
 				}
 
@@ -114,7 +172,7 @@
 					"maxclass" : "newobj",
 					"numinlets" : 1,
 					"numoutlets" : 0,
-					"patching_rect" : [ 345.0, 240.0, 157.0, 22.0 ],
+					"patching_rect" : [ 210.0, 240.0, 157.0, 22.0 ],
 					"text" : "s ---PathToPatternsFolder"
 				}
 
@@ -126,7 +184,7 @@
 					"numinlets" : 1,
 					"numoutlets" : 1,
 					"outlettype" : [ "" ],
-					"patching_rect" : [ 344.821428716182709, 180.0, 105.0, 22.0 ],
+					"patching_rect" : [ 209.821428716182709, 180.0, 105.0, 22.0 ],
 					"text" : "sprintf %spatterns"
 				}
 
@@ -241,8 +299,8 @@
 , 			{
 				"patchline" : 				{
 					"destination" : [ "obj-1", 0 ],
-					"midpoints" : [ 24.5, 169.0, 759.5, 169.0 ],
-					"order" : 0,
+					"midpoints" : [ 24.5, 169.0, 549.5, 169.0 ],
+					"order" : 1,
 					"source" : [ "obj-220", 0 ]
 				}
 
@@ -250,7 +308,7 @@
 , 			{
 				"patchline" : 				{
 					"destination" : [ "obj-15", 0 ],
-					"order" : 3,
+					"order" : 4,
 					"source" : [ "obj-220", 0 ]
 				}
 
@@ -258,8 +316,8 @@
 , 			{
 				"patchline" : 				{
 					"destination" : [ "obj-295", 0 ],
-					"midpoints" : [ 24.5, 167.0, 354.321428716182709, 167.0 ],
-					"order" : 2,
+					"midpoints" : [ 24.5, 167.0, 219.321428716182709, 167.0 ],
+					"order" : 3,
 					"source" : [ "obj-220", 0 ]
 				}
 
@@ -267,8 +325,17 @@
 , 			{
 				"patchline" : 				{
 					"destination" : [ "obj-439", 0 ],
-					"midpoints" : [ 24.5, 167.0, 594.321428716182709, 167.0 ],
-					"order" : 1,
+					"midpoints" : [ 24.5, 167.0, 384.321428716182709, 167.0 ],
+					"order" : 2,
+					"source" : [ "obj-220", 0 ]
+				}
+
+			}
+, 			{
+				"patchline" : 				{
+					"destination" : [ "obj-7", 0 ],
+					"midpoints" : [ 24.5, 168.0, 714.5, 168.0 ],
+					"order" : 0,
 					"source" : [ "obj-220", 0 ]
 				}
 
@@ -318,6 +385,13 @@
 			}
 , 			{
 				"patchline" : 				{
+					"destination" : [ "obj-5", 0 ],
+					"source" : [ "obj-6", 0 ]
+				}
+
+			}
+, 			{
+				"patchline" : 				{
 					"destination" : [ "obj-220", 0 ],
 					"order" : 1,
 					"source" : [ "obj-61", 0 ]
@@ -340,6 +414,13 @@
 				}
 
 			}
+, 			{
+				"patchline" : 				{
+					"destination" : [ "obj-6", 0 ],
+					"source" : [ "obj-7", 0 ]
+				}
+
+			}
  ],
 		"saved_attribute_attributes" : 		{
 			"default_plcolor" : 			{
@@ -347,8 +428,7 @@
 			}
 
 		}
-,
-		"oscreceiveudpport" : 0
+
 	}
 
 }
