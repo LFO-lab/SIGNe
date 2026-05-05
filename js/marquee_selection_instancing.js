@@ -1,4 +1,4 @@
-autowatch = 0;
+autowatch = 1;
 
 inlets = 1;
 outlets = 11; // 0-4 for UI, 5-9 for GPU Triggers
@@ -302,6 +302,8 @@ var dirty_scl = false;
 var dirty_til = false;
 var dirty_midi = false;
 var needs_recalc = false;
+var _dirty_selections = false;
+var _dirty_frustum = false;
 
 function notify_device_registered(id) {
     // If called without an id, just count (legacy path)
@@ -385,6 +387,11 @@ function bang() {
     if (dirty_scl) { outlet(8, "bang"); dirty_scl = false; pushed = true; }
     if (dirty_til) { outlet(9, "bang"); dirty_til = false; pushed = true; }
     if (dirty_midi) { outlet(10, "bang"); dirty_midi = false; pushed = true; }
+    
+    // Coalesce expensive UI updates that may have been triggered many times
+    // per frame by automation/modulation. Run at most once per render frame.
+    if (_dirty_selections) { draw_selections(); _dirty_selections = false; }
+    if (_dirty_frustum) { check_frustum(); _dirty_frustum = false; }
 }
 
 function focus_live_device(id) {
@@ -771,9 +778,10 @@ function update_group_positions() {
     }
     
     if (!is_booting) {
-        draw_selections();
+        _dirty_selections = true;
         mark_dirty(1, 0, 0, 0, 0); 
-        check_frustum();
+        _dirty_frustum = true;
+        needs_recalc = true;
     }
 }
 
@@ -806,9 +814,10 @@ function update_group_scale() {
     }
     
     if (!is_booting) {
-        draw_selections();
+        _dirty_selections = true;
         mark_dirty(1, 0, 0, 1, 0); 
-        check_frustum();
+        _dirty_frustum = true;
+        needs_recalc = true;
     }
 }
 
@@ -832,9 +841,10 @@ function update_group_rotation() {
     }
     
     if (!is_booting) {
-        draw_selections();
+        _dirty_selections = true;
         mark_dirty(1, 0, 0, 0, 0); 
-        check_frustum();
+        _dirty_frustum = true;
+        needs_recalc = true;
     }
 }
 
@@ -855,8 +865,9 @@ function update_group_opacity() {
     }
     
     if (!is_booting) {
-        draw_selections();
-        mark_dirty(0, 1, 1, 0, 0); 
+        _dirty_selections = true;
+        mark_dirty(0, 1, 1, 0, 0);
+        needs_recalc = true;
     }
 }
 
@@ -952,8 +963,9 @@ function release_selection() {
     }
 
     if (!is_booting) {
-        draw_selections();
-        mark_dirty(1, 1, 1, 1, 1); 
+        _dirty_selections = true;
+        mark_dirty(1, 1, 1, 1, 1);
+        needs_recalc = true;
     }
 }
 
@@ -980,8 +992,9 @@ function drop_new_object(id) {
     outlet(2, "move_x", dropX);
     
     if (!is_booting) {
-        draw_selections();
+        _dirty_selections = true;
         mark_dirty(1, 0, 0, 0, 0);
+        needs_recalc = true;
     }
 }
 
@@ -990,8 +1003,9 @@ function remove(id) {
     if (registry.contains(id)) registry.remove(id);
     
     if (!is_booting) {
-        draw_selections();
+        _dirty_selections = true;
         mark_dirty(1, 1, 1, 1, 1);
+        needs_recalc = true;
     }
 }
 
@@ -1094,9 +1108,10 @@ function ui_move_x(id, x) {
     outlet(2, "send", id); 
     
     if (!is_booting) {
-        draw_selections(); 
+        _dirty_selections = true;
         mark_dirty(1, 0, 0, 0, 0);
-        check_frustum();
+        _dirty_frustum = true;
+        needs_recalc = true;
     }
 }
 
@@ -1108,9 +1123,10 @@ function ui_move_y(id, y) {
     outlet(2, "send", id); 
     
     if (!is_booting) {
-        draw_selections(); 
+        _dirty_selections = true;
         mark_dirty(1, 0, 0, 0, 0);
-        check_frustum();
+        _dirty_frustum = true;
+        needs_recalc = true;
     }
 }
 
@@ -1120,8 +1136,9 @@ function ui_trigger_offset(id, val) {
     registry.set(id + "::trigger_offset", val); 
     
     if (!is_booting) {
-        draw_selections(); 
+        _dirty_selections = true; 
         mark_dirty(1, 0, 0, 0, 0);
+        needs_recalc = true;
     }
 }
 
@@ -1149,9 +1166,10 @@ function dial_scale_x(id, val, isHuman) {
     }
     
     if (!is_booting) {
-        draw_selections(); 
+        _dirty_selections = true;
         mark_dirty(1, 0, 0, 1, 0);
-        check_frustum();
+        _dirty_frustum = true;
+        needs_recalc = true;
     }
 }
 
@@ -1179,65 +1197,66 @@ function dial_scale_y(id, val, isHuman) {
     }
     
     if (!is_booting) {
-        draw_selections(); 
+        _dirty_selections = true;
         mark_dirty(1, 0, 0, 1, 0);
-        check_frustum();
+        _dirty_frustum = true;
+        needs_recalc = true;
     }
 }
 
 function ui_scale_x(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     registry.set(id + "::scale_x", val); outlet(2, "send", id); 
-    if (!is_booting) { draw_selections(); mark_dirty(1, 0, 0, 1, 0); check_frustum(); }
+    if (!is_booting) { _dirty_selections = true; mark_dirty(1, 0, 0, 1, 0); _dirty_frustum = true; needs_recalc = true; }
 }
 
 function ui_scale_y(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     registry.set(id + "::scale_y", val); outlet(2, "send", id); 
-    if (!is_booting) { draw_selections(); mark_dirty(1, 0, 0, 1, 0); check_frustum(); }
+    if (!is_booting) { _dirty_selections = true; mark_dirty(1, 0, 0, 1, 0); _dirty_frustum = true; needs_recalc = true; }
 }
 
 function ui_rotate(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     registry.set(id + "::rotation", val); outlet(2, "send", id); 
-    if (!is_booting) { draw_selections(); mark_dirty(1, 0, 0, 0, 0); }
+    if (!is_booting) { _dirty_selections = true; mark_dirty(1, 0, 0, 0, 0); needs_recalc = true; }
 }
 
 function ui_opacity(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     registry.set(id + "::opacity", val); outlet(2, "send", id); 
-    if (!is_booting) { draw_selections(); mark_dirty(0, 1, 1, 0, 0); }
+    if (!is_booting) { _dirty_selections = true; mark_dirty(0, 1, 1, 0, 0); needs_recalc = true; }
 }
 
 function ui_count(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     registry.set(id + "::count", val); outlet(2, "send", id); 
-    if (!is_booting) { draw_selections(); mark_dirty(1, 1, 1, 1, 1); check_frustum(); }
+    if (!is_booting) { _dirty_selections = true; mark_dirty(1, 1, 1, 1, 1); _dirty_frustum = true; needs_recalc = true; }
 }
 
 function ui_spacing(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     var v = (isHumanSpacing === 1) ? snap(val, quantSpacing) : val; 
     registry.set(id + "::spacing", v); outlet(2, "send", id); 
-    if (!is_booting) { draw_selections(); mark_dirty(1, 1, 1, 1, 1); check_frustum(); }
+    if (!is_booting) { _dirty_selections = true; mark_dirty(1, 1, 1, 1, 1); _dirty_frustum = true; needs_recalc = true; }
 }
 
 function ui_group_rot(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     registry.set(id + "::group_rot", val); outlet(2, "send", id); 
-    if (!is_booting) { draw_selections(); mark_dirty(1, 0, 0, 0, 0); check_frustum(); }
+    if (!is_booting) { _dirty_selections = true; mark_dirty(1, 0, 0, 0, 0); _dirty_frustum = true; needs_recalc = true; }
 }
 
 function ui_bounds_x(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     registry.set(id + "::bounds_x", val); 
-    if (!is_booting) { draw_selections(); check_frustum(); }
+    if (!is_booting) { _dirty_selections = true; _dirty_frustum = true; needs_recalc = true; }
 }
 
 function ui_bounds_y(id, val) {
     var registry = new Dict("SigneRegistry"); if (!registry.contains(id)) return;
     registry.set(id + "::bounds_y", val); 
-    if (!is_booting) { draw_selections(); check_frustum(); }
+    if (!is_booting) { _dirty_selections = true; _dirty_frustum = true; needs_recalc = true; }
 }
 
 function ui_layer(id, val) {
@@ -1511,7 +1530,7 @@ function camera_pos(cx, cy) {
                 }
             }
         }
-        if (!is_booting) { draw_selections(); mark_dirty(1, 0, 0, 0, 0); }
+        if (!is_booting) { _dirty_selections = true; mark_dirty(1, 0, 0, 0, 0); needs_recalc = true; }
     }
     lastCamX = cx; lastCamY = cy;
 }
@@ -1527,7 +1546,7 @@ function move_to_transport(id) {
         v = snap(bars, quantX) - tOff;
     } else { v = snap(bars, quantX); }
     registry.set(id + "::x", v); outlet(2, "send", id); outlet(2, "move_x", v); 
-    if (!is_booting) { draw_selections(); mark_dirty(1, 0, 0, 0, 0); }
+    if (!is_booting) { _dirty_selections = true; mark_dirty(1, 0, 0, 0, 0); needs_recalc = true; }
 }
 
 function move_transport_to_object(id) {
