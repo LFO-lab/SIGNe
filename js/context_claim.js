@@ -7,7 +7,7 @@
 // OUTLET 0:  1 = claim succeeded → proceed as valid instance (rename to SIGNe)
 //            0 = claim failed    → another instance owns it  (rename to Impostor)
 
-autowatch = 0;
+autowatch = 1;
 outlets = 1;
 
 var DICT_NAME = "SIGNe_ContextOwnership";
