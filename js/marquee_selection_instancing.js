@@ -18,7 +18,7 @@ var _boot_settle_task = null;    // debounce timer — fires 150ms after last re
 // PROFILING
 // =========================================================
 var _profile_t0 = 0;
-var _profile_enabled = false; // set to false in production
+var _profile_enabled = true; // set to false in production
 
 function profile_mark(label) {
     if (!_profile_enabled) return;
@@ -785,11 +785,18 @@ function bang() {
     var pushed = false; 
     if (_stats_enabled) _stats_bang_count++;
 
-    // update_math + matrix flush must run every frame because raw_matPos may
-    // have been updated directly by Symbol devices (fast modulation path)
-    // without touching any JS handler or dirty flag.
+    // update_math + matrix flush must run every frame because the raw_mat*
+    // matrices may have been updated directly by Symbol devices (fast
+    // modulation path) without touching any JS handler or dirty flag.
+    // raw_matPos → dirty_pos / raw_matScl → dirty_scl / raw_matTil → dirty_til
+    // raw_matCol affects both Symbol and Pattern alpha → dirty_sym + dirty_pat
+    // raw_matLay (spacing/groupRot) affects positions of duplicates → covered by dirty_pos
     needs_recalc = true;
     dirty_pos = true;
+    dirty_sym = true;
+    dirty_pat = true;
+    dirty_scl = true;
+    dirty_til = true;
 
     // draw_selections and check_frustum only need to run when the selection
     // set or frustum has actually changed — NOT forced every frame, since
