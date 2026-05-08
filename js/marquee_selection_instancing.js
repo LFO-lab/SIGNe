@@ -18,7 +18,7 @@ var _boot_settle_task = null;    // debounce timer — fires 150ms after last re
 // PROFILING
 // =========================================================
 var _profile_t0 = 0;
-var _profile_enabled = true; // set to false in production
+var _profile_enabled = false; // set to false in production
 
 function profile_mark(label) {
     if (!_profile_enabled) return;
