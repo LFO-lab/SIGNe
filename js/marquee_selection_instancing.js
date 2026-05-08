@@ -146,6 +146,87 @@ function _now_us() { return (new Date()).getTime() * 1000; }
 // =========================================================
 var _symIndexCache = {};
 var _patIndexCache = {};
+// Phase 4 opt 1: per-Symbol resolved texture index, keyed by Symbol id.
+// Avoids regex/split work in update_math hot loop (~30% savings at 50 symbols).
+// Updated whenever a Symbol's texture or the atlas itself changes.
+var _resolvedSymIdx = {};
+var _resolvedPatIdx = {};
+// Phase 4 opt 3: per-Symbol cached saturated RGB endpoints. update_math reads
+// these directly instead of running apply_sat 4 times per Symbol per frame.
+// Cache invalidated on any color/saturation change via _markColorDirty.
+//   _colorCache[id] = {sStartRGB:[r,g,b], sEndRGB:[r,g,b], pStartRGB:[r,g,b],
+//                      pEndRGB:[r,g,b], sStartA, sEndA, pStartA, pEndA, dirty}
+var _colorCache = {};
+function _markColorDirty(id) {
+    if (_colorCache[id]) _colorCache[id].dirty = true;
+}
+function _refreshColorCache(id, registry) {
+    var entry = _colorCache[id];
+    if (!entry) {
+        entry = _colorCache[id] = {
+            sStartRGB: [1.0, 1.0, 1.0], sEndRGB: [1.0, 1.0, 1.0],
+            pStartRGB: [0.0, 0.0, 0.0], pEndRGB: [0.0, 0.0, 0.0],
+            sStartA: 1.0, sEndA: 1.0, pStartA: 1.0, pEndA: 1.0,
+            dirty: true
+        };
+    }
+    if (!entry.dirty) return entry;
+    
+    var sStart = registry.get(id + "::symbol_colour_start_rgb") || [1.0, 1.0, 1.0, 1.0];
+    var sEnd   = registry.get(id + "::symbol_colour_end_rgb")   || [1.0, 1.0, 1.0, 1.0];
+    var pStart = registry.get(id + "::pattern_colour_start_rgb") || [0.0, 0.0, 0.0, 1.0];
+    var pEnd   = registry.get(id + "::pattern_colour_end_rgb")   || [0.0, 0.0, 0.0, 1.0];
+    var sStartSat = parseFloat(registry.get(id + "::symbol_colour_start_sat")); if (isNaN(sStartSat)) sStartSat = 1.0;
+    var sEndSat   = parseFloat(registry.get(id + "::symbol_colour_end_sat"));   if (isNaN(sEndSat))   sEndSat   = 1.0;
+    var pStartSat = parseFloat(registry.get(id + "::pattern_colour_start_sat")); if (isNaN(pStartSat)) pStartSat = 1.0;
+    var pEndSat   = parseFloat(registry.get(id + "::pattern_colour_end_sat"));   if (isNaN(pEndSat))   pEndSat   = 1.0;
+    
+    var s1 = apply_sat(sStart[0], sStart[1], sStart[2], sStartSat);
+    var s2 = apply_sat(sEnd[0],   sEnd[1],   sEnd[2],   sEndSat);
+    var p1 = apply_sat(pStart[0], pStart[1], pStart[2], pStartSat);
+    var p2 = apply_sat(pEnd[0],   pEnd[1],   pEnd[2],   pEndSat);
+    
+    entry.sStartRGB[0] = s1[0]; entry.sStartRGB[1] = s1[1]; entry.sStartRGB[2] = s1[2];
+    entry.sEndRGB[0]   = s2[0]; entry.sEndRGB[1]   = s2[1]; entry.sEndRGB[2]   = s2[2];
+    entry.pStartRGB[0] = p1[0]; entry.pStartRGB[1] = p1[1]; entry.pStartRGB[2] = p1[2];
+    entry.pEndRGB[0]   = p2[0]; entry.pEndRGB[1]   = p2[1]; entry.pEndRGB[2]   = p2[2];
+    entry.sStartA = (sStart[3] !== undefined) ? sStart[3] : 1.0;
+    entry.sEndA   = (sEnd[3]   !== undefined) ? sEnd[3]   : 1.0;
+    entry.pStartA = (pStart[3] !== undefined) ? pStart[3] : 1.0;
+    entry.pEndA   = (pEnd[3]   !== undefined) ? pEnd[3]   : 1.0;
+    entry.dirty = false;
+    return entry;
+}
+function _resolveTextureIndex(filename, indexCache) {
+    if (filename == null) return 0.0;
+    var parts = filename.split(/[\\/]/);
+    var clean = parts[parts.length - 1].replace(/\.[^/.]+$/, "");
+    var idx = indexCache[clean];
+    return (idx !== undefined) ? idx : 0.0;
+}
+function _refreshResolvedSymIdx(id) {
+    var registry = _reg();
+    var name = registry.get(id + "::symbol_texture");
+    _resolvedSymIdx[id] = _resolveTextureIndex(name, _symIndexCache);
+}
+function _refreshResolvedPatIdx(id) {
+    var registry = _reg();
+    var name = registry.get(id + "::pattern_texture");
+    _resolvedPatIdx[id] = _resolveTextureIndex(name, _patIndexCache);
+}
+function _refreshAllResolvedTextures() {
+    var registry = _reg();
+    var keys = registry.getkeys();
+    if (keys == null) return;
+    if (typeof keys === "string") keys = [keys];
+    for (var i = 0; i < keys.length; i++) {
+        var id = keys[i];
+        if (registry.contains(id)) {
+            _refreshResolvedSymIdx(id);
+            _refreshResolvedPatIdx(id);
+        }
+    }
+}
 
 function _build_atlas_index_cache() {
     profile_mark("_build_atlas_index_cache: start");
@@ -168,6 +249,8 @@ function _build_atlas_index_cache() {
         for (var i = 0; i < patArray.length; i++) _patIndexCache[patArray[i]] = i;
     }
     profile_mark("_build_atlas_index_cache: complete sym=" + Object.keys(_symIndexCache).length + " pat=" + Object.keys(_patIndexCache).length);
+    // Phase 4 opt 1: atlas changed, re-resolve every Symbol's texture index
+    _refreshAllResolvedTextures();
 }
 
 // Call after atlas is rebuilt (e.g. after build_atlases completes)
@@ -410,19 +493,139 @@ function _set_raw_pos(id, x, y) {
     }
 }
 
+// Phase 3: per-plane writers for raw_matPos (preserve other channels).
+function _set_raw_layer(id, layer) {
+    var slot = _slot_for_id[id]; if (slot === undefined || slot < 0) return;
+    try { var c = raw_matPos.getcell(slot); raw_matPos.setcell1d(slot, c[0], c[1], layer, c[3]); }
+    catch (e) {}
+}
+function _set_raw_rotation(id, rot) {
+    var slot = _slot_for_id[id]; if (slot === undefined || slot < 0) return;
+    try { var c = raw_matPos.getcell(slot); raw_matPos.setcell1d(slot, c[0], c[1], c[2], rot); }
+    catch (e) {}
+}
+
+// Phase 3: helpers for raw_matScl (2 planes: scaleX, scaleY).
+function _get_scl(id, registry) {
+    var slot = _slot_for_id[id];
+    if (slot !== undefined && slot >= 0) {
+        try { var c = raw_matScl.getcell(slot); return [c[0], c[1]]; }
+        catch (e) {}
+    }
+    if (registry === undefined) registry = _reg();
+    var sx = parseFloat(registry.get(id + "::scale_x")); if (isNaN(sx)) sx = 1.0;
+    var sy = parseFloat(registry.get(id + "::scale_y")); if (isNaN(sy)) sy = 1.0;
+    return [sx, sy];
+}
+function _set_raw_scl_x(id, sx) {
+    var slot = _slot_for_id[id]; if (slot === undefined || slot < 0) return;
+    try { var c = raw_matScl.getcell(slot); raw_matScl.setcell1d(slot, sx, c[1]); }
+    catch (e) {}
+}
+function _set_raw_scl_y(id, sy) {
+    var slot = _slot_for_id[id]; if (slot === undefined || slot < 0) return;
+    try { var c = raw_matScl.getcell(slot); raw_matScl.setcell1d(slot, c[0], sy); }
+    catch (e) {}
+}
+function _set_raw_scl(id, sx, sy) {
+    var slot = _slot_for_id[id]; if (slot === undefined || slot < 0) return;
+    try { raw_matScl.setcell1d(slot, sx, sy); }
+    catch (e) {}
+}
+
+// Phase 3: helpers for raw_matTil (2 planes: tiling uniform, intensity).
+// Pattern tiling is a single uniform value applied to both X and Y axes.
+function _get_til(id, registry) {
+    var slot = _slot_for_id[id];
+    if (slot !== undefined && slot >= 0) {
+        try { var c = raw_matTil.getcell(slot); return [c[0], c[1]]; }
+        catch (e) {}
+    }
+    if (registry === undefined) registry = _reg();
+    var t  = parseFloat(registry.get(id + "::pat_tiling_x")); if (isNaN(t))  t  = 1.0;
+    var pi = parseFloat(registry.get(id + "::pattern_intensity")); if (isNaN(pi)) pi = 0.0;
+    return [t, pi];
+}
+function _set_raw_tiling(id, t) {
+    var slot = _slot_for_id[id]; if (slot === undefined || slot < 0) return;
+    try { var c = raw_matTil.getcell(slot); raw_matTil.setcell1d(slot, t, c[1]); }
+    catch (e) {}
+}
+function _set_raw_intensity(id, intensity) {
+    var slot = _slot_for_id[id]; if (slot === undefined || slot < 0) return;
+    try { var c = raw_matTil.getcell(slot); raw_matTil.setcell1d(slot, c[0], intensity); }
+    catch (e) {}
+}
+
+// Phase 3: helpers for raw_matCol (3 planes: opacity, sInterp, pInterp).
+function _get_col(id, registry) {
+    var slot = _slot_for_id[id];
+    if (slot !== undefined && slot >= 0) {
+        try { var c = raw_matCol.getcell(slot); return [c[0], c[1], c[2]]; }
+        catch (e) {}
+    }
+    if (registry === undefined) registry = _reg();
+    var op = parseFloat(registry.get(id + "::opacity")); if (isNaN(op)) op = 1.0;
+    var si = parseFloat(registry.get(id + "::symbol_colour_interp")); if (isNaN(si)) si = 0.0;
+    var pi = parseFloat(registry.get(id + "::pattern_colour_interp")); if (isNaN(pi)) pi = 0.0;
+    return [op, si, pi];
+}
+function _set_raw_opacity(id, op) {
+    var slot = _slot_for_id[id]; if (slot === undefined || slot < 0) return;
+    try { var c = raw_matCol.getcell(slot); raw_matCol.setcell1d(slot, op, c[1], c[2]); }
+    catch (e) {}
+}
+function _set_raw_sinterp(id, si) {
+    var slot = _slot_for_id[id]; if (slot === undefined || slot < 0) return;
+    try { var c = raw_matCol.getcell(slot); raw_matCol.setcell1d(slot, c[0], si, c[2]); }
+    catch (e) {}
+}
+function _set_raw_pinterp(id, pi) {
+    var slot = _slot_for_id[id]; if (slot === undefined || slot < 0) return;
+    try { var c = raw_matCol.getcell(slot); raw_matCol.setcell1d(slot, c[0], c[1], pi); }
+    catch (e) {}
+}
+
+// Phase 3: helpers for raw_matLay (2 planes: spacing, groupRot).
+function _get_lay(id, registry) {
+    var slot = _slot_for_id[id];
+    if (slot !== undefined && slot >= 0) {
+        try { var c = raw_matLay.getcell(slot); return [c[0], c[1]]; }
+        catch (e) {}
+    }
+    if (registry === undefined) registry = _reg();
+    var sp = parseFloat(registry.get(id + "::spacing")); if (isNaN(sp)) sp = 0.0;
+    var gr = parseFloat(registry.get(id + "::group_rot")); if (isNaN(gr)) gr = 0.0;
+    return [sp, gr];
+}
+function _set_raw_spacing(id, sp) {
+    var slot = _slot_for_id[id]; if (slot === undefined || slot < 0) return;
+    try { var c = raw_matLay.getcell(slot); raw_matLay.setcell1d(slot, sp, c[1]); }
+    catch (e) {}
+}
+function _set_raw_grouprot(id, gr) {
+    var slot = _slot_for_id[id]; if (slot === undefined || slot < 0) return;
+    try { var c = raw_matLay.getcell(slot); raw_matLay.setcell1d(slot, c[0], gr); }
+    catch (e) {}
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // CORE STATE VARIABLES (from original)
 // ─────────────────────────────────────────────────────────────────────────────
 var is_booting = true; // --- THE NEW BOOT FLAG ---
 var ignoreX = false, ignoreY = false;
 var isDraggingMarquee = false, isDraggingGroup = false, isScalingGroup = false;
-var isRotatingGroup = false, isAdjustingOpacityGroup = false, isScrubbing = false; 
+var isRotatingGroup = false, isAdjustingOpacityGroup = false, isScrubbing = false;
+// Drag override: broadcast to selected Symbols so their cache pak path
+// suppresses modulation overwrites while the user is interacting via mouse.
+// One broadcast per drag-start, one per drag-end — not per frame.
+var _drag_active_kind = null;  // null | "pos" | "scl" | "rot" | "opac"  
 var handledClick = false, prevBtn = 0, got3DAnchor = false, lastViewportInteractionTime = 0; 
 var isAltDown = 0, isShiftDown = 0, isODown = 0, linkScale = 1, activeRatio = 1.0;
 var isCmdDown = 0;
 var globalPlayheadOffset = 0.0;
 var quantX = "free", quantY = "free", quantSpacing = "free";
-var isHumanX = 1, isHumanY = 1, isHumanSpacing = 1, snapToTrigger = 0, ROT_MAX = 1.0; 
+var snapToTrigger = 0, ROT_MAX = 1.0;
 var winW = 1920, winH = 1080, curX = 0, curY = 0;
 var a2x = 0, a2y = 0, c2x = 0, c2y = 0, a3x = 0, a3y = 0, c3x = 0, c3y = 0;
 var groupCx = 0, groupCy = 0, lastCamX = 0, lastCamY = 0, camInitialized = false;
@@ -448,8 +651,39 @@ var matMidiCol = new JitterMatrix(4, "float32", 1); matMidiCol.name = "SIGNe_Mid
 // Symbols write directly here at their assigned slot, bypassing JS for high-frequency updates
 var raw_matPos = new JitterMatrix("raw_matPos");
 
+// Phase 3: additional raw matrices for modulatable parameters.
+// Each matrix is shared across all Symbols, indexed by slot.
+// Created in SIGNe-Screen patch as named jit.matrix objects.
+//   raw_matScl: 2 planes — ScaleX, ScaleY
+//   raw_matTil: 2 planes — Tiling (uniform), PatternIntensity
+//   raw_matCol: 3 planes — Opacity, SymbolColourInterp, PatternColourInterp
+//   raw_matLay: 2 planes — Spacing, GroupRot
+var raw_matScl = new JitterMatrix("raw_matScl");
+var raw_matTil = new JitterMatrix("raw_matTil");
+var raw_matCol = new JitterMatrix("raw_matCol");
+var raw_matLay = new JitterMatrix("raw_matLay");
+
 // Persistent working array for update_math — avoids per-frame allocation
 var _all_instances = [];
+
+// Phase 4 opt 2: object pool for instance descriptors. Avoids per-frame
+// allocation of objects + 5 sub-arrays per render instance (50 symbols × 60Hz
+// × 6 allocations = 18,000/sec of GC churn). Pool grows to high-water mark
+// then stays stable; reused entries are mutated in place.
+var _instance_pool = [];
+function _get_pool_instance(idx) {
+    while (idx >= _instance_pool.length) {
+        _instance_pool.push({
+            z: 0,
+            pos: [0, 0, 0, 0],
+            sym: [0, 0, 0, 0],
+            pat: [0, 0, 0, 0],
+            scl: [0, 0, 0, 0],
+            til: [0, 0, 0]
+        });
+    }
+    return _instance_pool[idx];
+}
 
 // Cached Dict reference to avoid repeated new Dict() allocations (GC pressure).
 // The underlying Max Dict object is persistent; this JS wrapper is safe to hold.
@@ -533,6 +767,20 @@ function mark_midi_dirty() {
     needs_recalc = true;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Lightweight signal from the patch: raw_matPos has been written via the
+// cache-pak fast path (LFO modulation OR human dial input that the rate
+// detector classified as modulation). Tells the next bang() to refresh
+// selection wireframes / frustum culling against the new positions.
+// Wired from `r SIGNe_RawMatPosDirty → speedlim 16 → mark_pos_dirty` in Screen,
+// so it fires at most ~60Hz regardless of total symbol/modulation count.
+// ─────────────────────────────────────────────────────────────────────────────
+function mark_pos_dirty() {
+    _stats_record_handler("mark_pos_dirty");
+    _dirty_selections = true;
+    _dirty_frustum = true;
+}
+
 function bang() {
     var pushed = false; 
     if (_stats_enabled) _stats_bang_count++;
@@ -602,9 +850,10 @@ function cmd_key(state) { isCmdDown = state; }
 function set_quant_x(v) { quantX = v; quantSpacing = v; } 
 function set_quant_y(v) { quantY = v; }
 function set_quant_spacing(v) { quantSpacing = v; }
-function is_human_x(v) { isHumanX = v; }
-function is_human_y(v) { isHumanY = v; }
-function is_human_spacing(v) { isHumanSpacing = v; } 
+// Phase 4 cleanup: is_human_x/y/spacing handlers removed.
+// In the new architecture, modulation values bypass JS entirely via the
+// cache pak → raw matrix fast path, so these handlers were always called
+// with v=1 and the flag was always 1. The flag check is now redundant.
 function set_snap_mode(v) { snapToTrigger = v; }
 
 function set_link_scale(state) { 
@@ -950,6 +1199,23 @@ function take_centroid_snapshot(registry) {
 
 function release_group() {
     isDraggingGroup = false; isScalingGroup = false; isRotatingGroup = false; isAdjustingOpacityGroup = false;
+    
+    // Broadcast drag-end to all currently selected Symbols.
+    // Releases each Symbol's gate-override so modulation can resume.
+    if (_drag_active_kind !== null) {
+        var registry = _reg();
+        var keys = registry.getkeys();
+        if (keys != null) {
+            if (typeof keys === "string") keys = [keys];
+            for (var k = 0; k < keys.length; k++) {
+                if (registry.get(keys[k] + "::selected") == 1) {
+                    outlet(2, "send", keys[k]);
+                    outlet(2, "drag_active", 0);
+                }
+            }
+        }
+        _drag_active_kind = null;
+    }
 }
 
 function update_group_positions() {
@@ -958,6 +1224,19 @@ function update_group_positions() {
     var keys = registry.getkeys();
     if (keys == null) return;
     if (typeof keys === "string") keys = [keys];
+    
+    // Broadcast drag-start once at the beginning of a position drag.
+    // Tells each selected Symbol's gate to lock to human path until drag ends.
+    if (_drag_active_kind !== "pos") {
+        for (var k = 0; k < keys.length; k++) {
+            if (registry.get(keys[k] + "::selected") == 1) {
+                outlet(2, "send", keys[k]);
+                outlet(2, "drag_active", 1);
+            }
+        }
+        _drag_active_kind = "pos";
+    }
+    
     for (var i = 0; i < keys.length; i++) {
         var id = keys[i];
         if (registry.get(id + "::selected") == 1) { 
@@ -991,6 +1270,17 @@ function update_group_scale() {
     if (keys == null) return;
     if (typeof keys === "string") keys = [keys];
     
+    // Broadcast drag-start once at the beginning of a scale drag.
+    if (_drag_active_kind !== "scl") {
+        for (var k = 0; k < keys.length; k++) {
+            if (registry.get(keys[k] + "::selected") == 1) {
+                outlet(2, "send", keys[k]);
+                outlet(2, "drag_active", 1);
+            }
+        }
+        _drag_active_kind = "scl";
+    }
+    
     for (var i = 0; i < keys.length; i++) {
         var id = keys[i];
         if (registry.get(id + "::selected") == 1) { 
@@ -1003,6 +1293,7 @@ function update_group_scale() {
             registry.set(id + "::x", newX); registry.set(id + "::y", newY);
             registry.set(id + "::scale_x", newSx); registry.set(id + "::scale_y", newSy);
             _set_raw_pos(id, newX, newY);  // Phase 2c: keep raw_matPos in sync
+            _set_raw_scl(id, newSx, newSy);  // Phase 3: keep raw_matScl in sync
             
             outlet(2, "send", id); 
             outlet(2, "move_x", newX); outlet(2, "move_y", newY);
@@ -1026,6 +1317,18 @@ function update_group_rotation() {
     var keys = registry.getkeys();
     if (keys == null) return;
     if (typeof keys === "string") keys = [keys];
+    
+    // Broadcast drag-start once at the beginning of a rotation drag.
+    if (_drag_active_kind !== "rot") {
+        for (var k = 0; k < keys.length; k++) {
+            if (registry.get(keys[k] + "::selected") == 1) {
+                outlet(2, "send", keys[k]);
+                outlet(2, "drag_active", 1);
+            }
+        }
+        _drag_active_kind = "rot";
+    }
+    
     for (var i = 0; i < keys.length; i++) {
         var id = keys[i];
         if (registry.get(id + "::selected") == 1) { 
@@ -1035,6 +1338,7 @@ function update_group_rotation() {
             var newRot = true_wrap(registry.get(id + "::base_rot") + deltaRot, ROT_MAX);
             registry.set(id + "::x", newX); registry.set(id + "::y", newY); registry.set(id + "::rotation", newRot);
             _set_raw_pos(id, newX, newY);  // Phase 2c: keep raw_matPos in sync
+            _set_raw_rotation(id, newRot);  // Phase 3: keep rotation in sync
             outlet(2, "send", id); outlet(2, "move_x", newX); outlet(2, "move_y", newY); outlet(2, "rotation", newRot);
         }
     }
@@ -1051,6 +1355,22 @@ function update_group_opacity() {
     var deltaY = c3y - a3y;
     var registry = _reg();
     var keys = registry.getkeys();
+    if (keys != null) {
+        if (typeof keys === "string") keys = [keys];
+        // Broadcast drag-start once at the beginning of an opacity drag.
+        if (_drag_active_kind !== "opac") {
+            for (var k = 0; k < keys.length; k++) {
+                if (registry.get(keys[k] + "::selected") == 1) {
+                    outlet(2, "send", keys[k]);
+                    outlet(2, "drag_active", 1);
+                }
+            }
+            _drag_active_kind = "opac";
+        }
+    }
+    // Restore original local registry handling
+    var registry = _reg();
+    var keys = registry.getkeys();
     if (keys == null) return;
     if (typeof keys === "string") keys = [keys];
     for (var i = 0; i < keys.length; i++) {
@@ -1059,6 +1379,7 @@ function update_group_opacity() {
             if (registry.get(id + "::locked") == 1) continue;
             var newOpac = Math.max(0, Math.min(1, parseFloat(registry.get(id + "::base_opacity")) + deltaY));
             registry.set(id + "::opacity", newOpac);
+            _set_raw_opacity(id, newOpac);  // Phase 3: keep raw_matCol in sync
             outlet(2, "send", id); outlet(2, "opacity", newOpac);
         }
     }
@@ -1200,6 +1521,11 @@ function drop_new_object(id) {
 
 function remove(id) {
     _stats_record_handler("remove");
+    // Phase 4 opt 1: drop resolved-index cache entries
+    delete _resolvedSymIdx[id];
+    delete _resolvedPatIdx[id];
+    // Phase 4 opt 3: drop color cache entry
+    delete _colorCache[id];
     var registry = _reg();
     if (registry.contains(id)) registry.remove(id);
     // Phase 1: free this Symbol's slot for reuse
@@ -1304,12 +1630,12 @@ function ui_move_x(id, x) {
     _stats_record_handler("ui_move_x");
     var registry = _reg();
     if (!registry.contains(id)) return;
-    var newX = x;
-    if (isHumanX === 1) {
-        if (snapToTrigger === 1) {
-            var tOff = registry.get(id + "::trigger_offset") || 0.0;
-            newX = snap(x + tOff, quantX) - tOff;
-        } else { newX = snap(x, quantX); }
+    var newX;
+    if (snapToTrigger === 1) {
+        var tOff = registry.get(id + "::trigger_offset") || 0.0;
+        newX = snap(x + tOff, quantX) - tOff;
+    } else {
+        newX = snap(x, quantX);
     }
     registry.set(id + "::x", newX); 
     // Phase 2c: ALSO write to raw_matPos so render stays consistent with registry
@@ -1336,7 +1662,7 @@ function ui_move_y(id, y) {
     _stats_record_handler("ui_move_y");
     var registry = _reg();
     if (!registry.contains(id)) return;
-    var v = (isHumanY === 1) ? snap(y, quantY) : y; 
+    var v = snap(y, quantY);
     registry.set(id + "::y", v); 
     // Phase 2c: ALSO write to raw_matPos
     var _slot = _slot_for_id[id];
@@ -1369,14 +1695,12 @@ function ui_trigger_offset(id, val) {
     }
 }
 
-function dial_scale_x(id, val, isHuman) {
+function dial_scale_x(id, val) {
     if (isScalingGroup || ignoreX) return; 
     var registry = _reg();
     if (!registry.contains(id)) return;
     
-    var humanInteraction = (isHuman !== undefined) ? isHuman : 1;
-    
-    if (linkScale === 1 && humanInteraction === 1) {
+    if (linkScale === 1) {
         var oldX = registry.get(id + "::scale_x") || 1.0;
         var oldY = registry.get(id + "::scale_y") || 1.0;
         var currentRatio = (oldX !== 0) ? (oldY / oldX) : 1.0;
@@ -1400,14 +1724,12 @@ function dial_scale_x(id, val, isHuman) {
     }
 }
 
-function dial_scale_y(id, val, isHuman) {
+function dial_scale_y(id, val) {
     if (isScalingGroup || ignoreY) return; 
     var registry = _reg();
     if (!registry.contains(id)) return;
 
-    var humanInteraction = (isHuman !== undefined) ? isHuman : 1;
-    
-    if (linkScale === 1 && humanInteraction === 1) {
+    if (linkScale === 1) {
         var oldX = registry.get(id + "::scale_x") || 1.0;
         var oldY = registry.get(id + "::scale_y") || 1.0;
         var currentRatio = (oldY !== 0) ? (oldX / oldY) : 1.0;
@@ -1434,28 +1756,31 @@ function dial_scale_y(id, val, isHuman) {
 function ui_scale_x(id, val) {
     _stats_record_handler("ui_scale_x");
     var registry = _reg(); if (!registry.contains(id)) return;
-    registry.set(id + "::scale_x", val); outlet(2, "send", id); 
+    registry.set(id + "::scale_x", val); _set_raw_scl_x(id, val); outlet(2, "send", id); 
     if (!is_booting) { _dirty_selections = true; mark_dirty(1, 0, 0, 1, 0); _dirty_frustum = true; needs_recalc = true; }
 }
 
 function ui_scale_y(id, val) {
     _stats_record_handler("ui_scale_y");
     var registry = _reg(); if (!registry.contains(id)) return;
-    registry.set(id + "::scale_y", val); outlet(2, "send", id); 
+    registry.set(id + "::scale_y", val); _set_raw_scl_y(id, val); outlet(2, "send", id); 
     if (!is_booting) { _dirty_selections = true; mark_dirty(1, 0, 0, 1, 0); _dirty_frustum = true; needs_recalc = true; }
 }
 
 function ui_rotate(id, val) {
     _stats_record_handler("ui_rotate");
     var registry = _reg(); if (!registry.contains(id)) return;
-    registry.set(id + "::rotation", val); outlet(2, "send", id); 
+    registry.set(id + "::rotation", val);
+    // Phase 3: store raw rotation in user units (radians conversion happens in update_math)
+    _set_raw_rotation(id, val);
+    outlet(2, "send", id); 
     if (!is_booting) { _dirty_selections = true; mark_dirty(1, 0, 0, 0, 0); needs_recalc = true; }
 }
 
 function ui_opacity(id, val) {
     _stats_record_handler("ui_opacity");
     var registry = _reg(); if (!registry.contains(id)) return;
-    registry.set(id + "::opacity", val); outlet(2, "send", id); 
+    registry.set(id + "::opacity", val); _set_raw_opacity(id, val); outlet(2, "send", id); 
     if (!is_booting) { _dirty_selections = true; mark_dirty(0, 1, 1, 0, 0); needs_recalc = true; }
 }
 
@@ -1469,15 +1794,15 @@ function ui_count(id, val) {
 function ui_spacing(id, val) {
     _stats_record_handler("ui_spacing");
     var registry = _reg(); if (!registry.contains(id)) return;
-    var v = (isHumanSpacing === 1) ? snap(val, quantSpacing) : val; 
-    registry.set(id + "::spacing", v); outlet(2, "send", id); 
+    var v = snap(val, quantSpacing);
+    registry.set(id + "::spacing", v); _set_raw_spacing(id, v); outlet(2, "send", id); 
     if (!is_booting) { _dirty_selections = true; mark_dirty(1, 1, 1, 1, 1); _dirty_frustum = true; needs_recalc = true; }
 }
 
 function ui_group_rot(id, val) {
     _stats_record_handler("ui_group_rot");
     var registry = _reg(); if (!registry.contains(id)) return;
-    registry.set(id + "::group_rot", val); outlet(2, "send", id); 
+    registry.set(id + "::group_rot", val); _set_raw_grouprot(id, val); outlet(2, "send", id); 
     if (!is_booting) { _dirty_selections = true; mark_dirty(1, 0, 0, 0, 0); _dirty_frustum = true; needs_recalc = true; }
 }
 
@@ -1498,19 +1823,23 @@ function ui_bounds_y(id, val) {
 function ui_layer(id, val) {
     _stats_record_handler("ui_layer");
     var registry = _reg(); if (!registry.contains(id)) return;
-    registry.set(id + "::layer", val); 
-    if (!is_booting) mark_dirty(1, 1, 1, 1, 1); 
+    registry.set(id + "::layer", val);
+    // Phase 3: store raw layer in user units (×0.01 happens in update_math)
+    _set_raw_layer(id, val);
+    if (!is_booting) { _dirty_selections = true; mark_dirty(1, 1, 1, 1, 1); _dirty_frustum = true; needs_recalc = true; }
 }
 
 function ui_symbol_texture(id, val) {
     var registry = _reg(); if (!registry.contains(id)) return;
-    registry.set(id + "::symbol_texture", val); 
+    registry.set(id + "::symbol_texture", val);
+    _refreshResolvedSymIdx(id);
     if (!is_booting) mark_dirty(1, 1, 1, 1, 1);
 }
 
 function ui_symbol_colour_start_rgb() {
     var args = arrayfromargs(arguments); var id = args[0];
     var registry = _reg(); if (!registry.contains(id)) return;
+    _markColorDirty(id);
     var hsl = rgbToHsl(args[1], args[2], args[3]);
     var pureRGB = hslToRgb(hsl[0], 1.0, hsl[2]); 
     registry.set(id + "::symbol_colour_start_rgb", pureRGB); 
@@ -1519,6 +1848,7 @@ function ui_symbol_colour_start_rgb() {
 
 function ui_symbol_colour_start_sat(id, val) {
     var registry = _reg(); if (!registry.contains(id)) return;
+    _markColorDirty(id);
     registry.set(id + "::symbol_colour_start_sat", val); 
     if (!is_booting) mark_dirty(0, 1, 0, 0, 0); 
 }
@@ -1526,6 +1856,7 @@ function ui_symbol_colour_start_sat(id, val) {
 function ui_symbol_colour_end_rgb() {
     var args = arrayfromargs(arguments); var id = args[0];
     var registry = _reg(); if (!registry.contains(id)) return;
+    _markColorDirty(id);
     var hsl = rgbToHsl(args[1], args[2], args[3]);
     var pureRGB = hslToRgb(hsl[0], 1.0, hsl[2]);
     registry.set(id + "::symbol_colour_end_rgb", pureRGB); 
@@ -1534,6 +1865,7 @@ function ui_symbol_colour_end_rgb() {
 
 function ui_symbol_colour_end_sat(id, val) {
     var registry = _reg(); if (!registry.contains(id)) return;
+    _markColorDirty(id);
     registry.set(id + "::symbol_colour_end_sat", val); 
     if (!is_booting) mark_dirty(0, 1, 0, 0, 0); 
 }
@@ -1541,6 +1873,7 @@ function ui_symbol_colour_end_sat(id, val) {
 function ui_symbol_colour_start_hsl() {
     var args = arrayfromargs(arguments); var id = args[0];
     var registry = _reg(); if (!registry.contains(id)) return;
+    _markColorDirty(id);
     var pureRGB = hslToRgb(args[1], 1.0, args[3]);
     registry.set(id + "::symbol_colour_start_rgb", pureRGB); 
     if (!is_booting) mark_dirty(0, 1, 0, 0, 0);
@@ -1549,6 +1882,7 @@ function ui_symbol_colour_start_hsl() {
 function ui_symbol_colour_end_hsl() {
     var args = arrayfromargs(arguments); var id = args[0];
     var registry = _reg(); if (!registry.contains(id)) return;
+    _markColorDirty(id);
     var pureRGB = hslToRgb(args[1], 1.0, args[3]);
     registry.set(id + "::symbol_colour_end_rgb", pureRGB); 
     if (!is_booting) mark_dirty(0, 1, 0, 0, 0);
@@ -1557,33 +1891,36 @@ function ui_symbol_colour_end_hsl() {
 function ui_symbol_colour_interp(id, val) {
     _stats_record_handler("ui_symbol_colour_interp");
     var registry = _reg(); if (!registry.contains(id)) return;
-    registry.set(id + "::symbol_colour_interp", val); 
-    if (!is_booting) mark_dirty(0, 1, 0, 0, 0); 
+    registry.set(id + "::symbol_colour_interp", val); _set_raw_sinterp(id, val);
+    if (!is_booting) { _dirty_selections = true; mark_dirty(0, 1, 0, 0, 0); needs_recalc = true; }
 }
 
 function ui_pattern_texture(id, val) {
     var registry = _reg(); if (!registry.contains(id)) return;
-    registry.set(id + "::pattern_texture", val); 
+    registry.set(id + "::pattern_texture", val);
+    _refreshResolvedPatIdx(id);
     if (!is_booting) mark_dirty(1, 1, 1, 1, 1); 
 }
 
 function ui_pattern_tiling(id, val) {
     _stats_record_handler("ui_pattern_tiling");
     var registry = _reg(); if (!registry.contains(id)) return;
-    registry.set(id + "::pat_tiling_x", val); registry.set(id + "::pat_tiling_y", val); 
-    if (!is_booting) mark_dirty(0, 0, 0, 0, 1);
+    registry.set(id + "::pat_tiling_x", val); registry.set(id + "::pat_tiling_y", val);
+    _set_raw_tiling(id, val);
+    if (!is_booting) { _dirty_selections = true; mark_dirty(0, 0, 0, 0, 1); needs_recalc = true; }
 }
 
 function ui_pattern_intensity(id, val) {
     _stats_record_handler("ui_pattern_intensity");
     var registry = _reg(); if (!registry.contains(id)) return;
-    registry.set(id + "::pattern_intensity", val); 
-    if (!is_booting) mark_dirty(0, 0, 1, 0, 0);
+    registry.set(id + "::pattern_intensity", val); _set_raw_intensity(id, val);
+    if (!is_booting) { _dirty_selections = true; mark_dirty(0, 0, 1, 0, 0); needs_recalc = true; }
 }
 
 function ui_pattern_colour_start_rgb() {
     var args = arrayfromargs(arguments); var id = args[0];
     var registry = _reg(); if (!registry.contains(id)) return;
+    _markColorDirty(id);
     var hsl = rgbToHsl(args[1], args[2], args[3]);
     var pureRGB = hslToRgb(hsl[0], 1.0, hsl[2]);
     registry.set(id + "::pattern_colour_start_rgb", pureRGB); 
@@ -1592,6 +1929,7 @@ function ui_pattern_colour_start_rgb() {
 
 function ui_pattern_colour_start_sat(id, val) {
     var registry = _reg(); if (!registry.contains(id)) return;
+    _markColorDirty(id);
     registry.set(id + "::pattern_colour_start_sat", val); 
     if (!is_booting) mark_dirty(0, 0, 1, 0, 0); 
 }
@@ -1599,6 +1937,7 @@ function ui_pattern_colour_start_sat(id, val) {
 function ui_pattern_colour_end_rgb() {
     var args = arrayfromargs(arguments); var id = args[0];
     var registry = _reg(); if (!registry.contains(id)) return;
+    _markColorDirty(id);
     var hsl = rgbToHsl(args[1], args[2], args[3]);
     var pureRGB = hslToRgb(hsl[0], 1.0, hsl[2]);
     registry.set(id + "::pattern_colour_end_rgb", pureRGB); 
@@ -1607,6 +1946,7 @@ function ui_pattern_colour_end_rgb() {
 
 function ui_pattern_colour_end_sat(id, val) {
     var registry = _reg(); if (!registry.contains(id)) return;
+    _markColorDirty(id);
     registry.set(id + "::pattern_colour_end_sat", val); 
     if (!is_booting) mark_dirty(0, 0, 1, 0, 0); 
 }
@@ -1614,6 +1954,7 @@ function ui_pattern_colour_end_sat(id, val) {
 function ui_pattern_colour_start_hsl() {
     var args = arrayfromargs(arguments); var id = args[0];
     var registry = _reg(); if (!registry.contains(id)) return;
+    _markColorDirty(id);
     var pureRGB = hslToRgb(args[1], 1.0, args[3]);
     registry.set(id + "::pattern_colour_start_rgb", pureRGB); 
     if (!is_booting) mark_dirty(0, 0, 1, 0, 0);
@@ -1622,6 +1963,7 @@ function ui_pattern_colour_start_hsl() {
 function ui_pattern_colour_end_hsl() {
     var args = arrayfromargs(arguments); var id = args[0];
     var registry = _reg(); if (!registry.contains(id)) return;
+    _markColorDirty(id);
     var pureRGB = hslToRgb(args[1], 1.0, args[3]);
     registry.set(id + "::pattern_colour_end_rgb", pureRGB); 
     if (!is_booting) mark_dirty(0, 0, 1, 0, 0);
@@ -1630,8 +1972,8 @@ function ui_pattern_colour_end_hsl() {
 function ui_pattern_colour_interp(id, val) {
     _stats_record_handler("ui_pattern_colour_interp");
     var registry = _reg(); if (!registry.contains(id)) return;
-    registry.set(id + "::pattern_colour_interp", val); 
-    if (!is_booting) mark_dirty(0, 0, 1, 0, 0);
+    registry.set(id + "::pattern_colour_interp", val); _set_raw_pinterp(id, val);
+    if (!is_booting) { _dirty_selections = true; mark_dirty(0, 0, 1, 0, 0); needs_recalc = true; }
 }
 
 function ui_midi_trigger_state(id, val) {
@@ -1962,80 +2304,67 @@ function update_math() {
             bx = parseFloat(registry.get(id + "::x")) || 0.0;
             by = parseFloat(registry.get(id + "::y")) || 0.0;
         }
-        var layer = (parseFloat(registry.get(id + "::layer")) || 0.0) * 0.01;
-        var rotRadians = (parseFloat(registry.get(id + "::rotation")) || 0.0) * 2.0 * Math.PI;
-
-        var sx = parseFloat(registry.get(id + "::scale_x")); if (isNaN(sx)) sx = 1.0;
-        var sy = parseFloat(registry.get(id + "::scale_y")); if (isNaN(sy)) sy = 1.0;
-        
-        var symIdx = 0.0;
-        var patIdx = 0.0;
-
-        var symName = registry.get(id + "::symbol_texture");
-        if (symName != null) {
-            var symParts = symName.split(/[\\/]/);
-            var cleanSym = symParts[symParts.length - 1].replace(/\.[^/.]+$/, "");
-            var _si = _symIndexCache[cleanSym];
-            if (_si !== undefined) symIdx = _si;
+        // Phase 3: read layer + rotation from raw_matPos planes 2, 3 (with registry fallback)
+        var layer_raw, rot_raw;
+        if (have_pos_from_matrix) {
+            layer_raw = posCell[2];
+            rot_raw = posCell[3];
+        } else {
+            layer_raw = parseFloat(registry.get(id + "::layer")) || 0.0;
+            rot_raw = parseFloat(registry.get(id + "::rotation")) || 0.0;
         }
+        var layer = layer_raw * 0.01;
+        var rotRadians = rot_raw * 2.0 * Math.PI;
 
-        var patName = registry.get(id + "::pattern_texture");
-        if (patName != null) {
-            var patParts = patName.split(/[\\/]/);
-            var cleanPat = patParts[patParts.length - 1].replace(/\.[^/.]+$/, "");
-            var _pi = _patIndexCache[cleanPat];
-            if (_pi !== undefined) patIdx = _pi;
-        }
-
-        var opac = parseFloat(registry.get(id + "::opacity")); if (isNaN(opac)) opac = 1.0;
-
-        var sStart = registry.get(id + "::symbol_colour_start_rgb") || [1.0, 1.0, 1.0, 1.0];
-        var sEnd = registry.get(id + "::symbol_colour_end_rgb") || [1.0, 1.0, 1.0, 1.0];
-        var pStart = registry.get(id + "::pattern_colour_start_rgb") || [0.0, 0.0, 0.0, 1.0];
-        var pEnd = registry.get(id + "::pattern_colour_end_rgb") || [0.0, 0.0, 0.0, 1.0];
-
-        var sStartSat = parseFloat(registry.get(id + "::symbol_colour_start_sat")); if (isNaN(sStartSat)) sStartSat = 1.0;
-        var sEndSat = parseFloat(registry.get(id + "::symbol_colour_end_sat")); if (isNaN(sEndSat)) sEndSat = 1.0;
-        var pStartSat = parseFloat(registry.get(id + "::pattern_colour_start_sat")); if (isNaN(pStartSat)) pStartSat = 1.0;
-        var pEndSat = parseFloat(registry.get(id + "::pattern_colour_end_sat")); if (isNaN(pEndSat)) pEndSat = 1.0;
+        // Phase 3: read scale from raw_matScl (with registry fallback)
+        var _sclVals = _get_scl(id, registry);
+        var sx = _sclVals[0], sy = _sclVals[1];
         
-        var sInterp = parseFloat(registry.get(id + "::symbol_colour_interp")); if (isNaN(sInterp)) sInterp = 0.0;
-        var pInterp = parseFloat(registry.get(id + "::pattern_colour_interp")); if (isNaN(pInterp)) pInterp = 0.0;
+        // Phase 4 opt 1: pre-resolved texture indices, no string work in hot loop
+        var symIdx = _resolvedSymIdx[id]; if (symIdx === undefined) symIdx = 0.0;
+        var patIdx = _resolvedPatIdx[id]; if (patIdx === undefined) patIdx = 0.0;
 
-        var sStartRGB = apply_sat(sStart[0], sStart[1], sStart[2], sStartSat);
-        var sEndRGB = apply_sat(sEnd[0], sEnd[1], sEnd[2], sEndSat);
-        var pStartRGB = apply_sat(pStart[0], pStart[1], pStart[2], pStartSat);
-        var pEndRGB = apply_sat(pEnd[0], pEnd[1], pEnd[2], pEndSat);
+        // Phase 3: read opacity, sInterp, pInterp from raw_matCol (with registry fallback)
+        var _colVals = _get_col(id, registry);
+        var opac = _colVals[0];
+        // sInterp and pInterp consumed below where they're used
 
-        var sr = lerp(sStartRGB[0], sEndRGB[0], sInterp);
-        var sg = lerp(sStartRGB[1], sEndRGB[1], sInterp);
-        var sb = lerp(sStartRGB[2], sEndRGB[2], sInterp);
-        var sa = lerp(sStart[3] !== undefined ? sStart[3] : 1.0, sEnd[3] !== undefined ? sEnd[3] : 1.0, sInterp) * opac;
+        // Phase 4 opt 3: cached saturated endpoints; only lerp runs every frame.
+        var _cc = _refreshColorCache(id, registry);
+        var sInterp = _colVals[1];
+        var pInterp = _colVals[2];
 
-        var pr = lerp(pStartRGB[0], pEndRGB[0], pInterp);
-        var pg = lerp(pStartRGB[1], pEndRGB[1], pInterp);
-        var pb = lerp(pStartRGB[2], pEndRGB[2], pInterp);
-        var pa = lerp(pStart[3] !== undefined ? pStart[3] : 1.0, pEnd[3] !== undefined ? pEnd[3] : 1.0, pInterp) * opac;
+        var sr = lerp(_cc.sStartRGB[0], _cc.sEndRGB[0], sInterp);
+        var sg = lerp(_cc.sStartRGB[1], _cc.sEndRGB[1], sInterp);
+        var sb = lerp(_cc.sStartRGB[2], _cc.sEndRGB[2], sInterp);
+        var sa = lerp(_cc.sStartA, _cc.sEndA, sInterp) * opac;
 
-        var tx = parseFloat(registry.get(id + "::pat_tiling_x")) || 1.0; 
-        var ty = parseFloat(registry.get(id + "::pat_tiling_y")) || 1.0;
-        var pIntensity = parseFloat(registry.get(id + "::pattern_intensity")); if (isNaN(pIntensity)) pIntensity = 0.0;
+        var pr = lerp(_cc.pStartRGB[0], _cc.pEndRGB[0], pInterp);
+        var pg = lerp(_cc.pStartRGB[1], _cc.pEndRGB[1], pInterp);
+        var pb = lerp(_cc.pStartRGB[2], _cc.pEndRGB[2], pInterp);
+        var pa = lerp(_cc.pStartA, _cc.pEndA, pInterp) * opac;
+
+        // Phase 3: read uniform tiling + intensity from raw_matTil (with registry fallback)
+        var _tilVals = _get_til(id, registry);
+        var tx = _tilVals[0], ty = _tilVals[0], pIntensity = _tilVals[1];
                 
-        var count = parseInt(registry.get(id + "::count")) || 1, spacing = parseFloat(registry.get(id + "::spacing")) || 0.0;
-        var gRot = parseFloat(registry.get(id + "::group_rot")) || 0.0;
+        // Phase 3: read spacing + groupRot from raw_matLay (with registry fallback)
+        var _layVals = _get_lay(id, registry);
+        var spacing = _layVals[0], gRot = _layVals[1];
+        var count = parseInt(registry.get(id + "::count")) || 1;
         var gCos = Math.cos(-gRot * 2.0 * Math.PI), gSin = Math.sin(-gRot * 2.0 * Math.PI);
 
         for (var j = 0; j < count; j++) {
             var ix = bx + (j * spacing * gCos), iy = by + (j * spacing * gSin);
-            
-            all_instances.push({
-                z: layer, 
-                pos: [ix, iy, layer, rotRadians],
-                sym: [sr, sg, sb, sa],
-                pat: [pr, pg, pb, pa],
-                scl: [sx, sy, symIdx, patIdx],
-                til: [tx, ty, pIntensity]
-            });
+            // Phase 4 opt 2: pool reuse instead of allocation
+            var inst = _get_pool_instance(all_instances.length);
+            inst.z = layer;
+            inst.pos[0] = ix;            inst.pos[1] = iy;       inst.pos[2] = layer;  inst.pos[3] = rotRadians;
+            inst.sym[0] = sr;            inst.sym[1] = sg;       inst.sym[2] = sb;     inst.sym[3] = sa;
+            inst.pat[0] = pr;            inst.pat[1] = pg;       inst.pat[2] = pb;     inst.pat[3] = pa;
+            inst.scl[0] = sx;            inst.scl[1] = sy;       inst.scl[2] = symIdx; inst.scl[3] = patIdx;
+            inst.til[0] = tx;            inst.til[1] = ty;       inst.til[2] = pIntensity;
+            all_instances.push(inst);
         }
     }
 
