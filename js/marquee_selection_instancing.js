@@ -657,7 +657,7 @@ var isRotatingGroup = false, isAdjustingOpacityGroup = false, isScrubbing = fals
 // One broadcast per drag-start, one per drag-end — not per frame.
 var _drag_active_kind = null;  // null | "pos" | "scl" | "rot" | "opac"  
 var handledClick = false, prevBtn = 0, got3DAnchor = false, lastViewportInteractionTime = 0; 
-var isAltDown = 0, isShiftDown = 0, isODown = 0, linkScale = 1, activeRatio = 1.0;
+var isAltDown = 0, isShiftDown = 0, isODown = 0, linkScale = 0, activeRatio = 1.0;
 var isCmdDown = 0;
 var globalPlayheadOffset = 0.0;
 var quantX = "free", quantY = "free", quantSpacing = "free";
