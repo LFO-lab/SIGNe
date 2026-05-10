@@ -19,6 +19,9 @@ var _boot_settle_task = null;    // debounce timer — fires 150ms after last re
 // =========================================================
 var _profile_t0 = 0;
 var _profile_enabled = false; // set to false in production
+var _profile_heartbeat_task = null;
+var _profile_heartbeat_count = 0;
+var _profile_atlas_started = false;
 
 function profile_mark(label) {
     if (!_profile_enabled) return;
@@ -33,6 +36,30 @@ function profile_reset() {
 
 function profile_enable(v) {
     _profile_enabled = (v !== 0);
+}
+
+function _profile_start_heartbeat() {
+    if (!_profile_enabled) return;
+    if (_profile_heartbeat_task !== null) _profile_heartbeat_task.cancel();
+    _profile_heartbeat_count = 0;
+    _profile_heartbeat_task = new Task(function() {
+        _profile_heartbeat_count++;
+        profile_mark("heartbeat: atlas_started=" + _profile_atlas_started
+            + " registered=" + _registered_count + "/" + _expected_count
+            + " booting=" + is_booting);
+        if (_profile_heartbeat_count < 24 && !_profile_atlas_started) {
+            _profile_heartbeat_task.schedule(5000);
+        } else {
+            _profile_heartbeat_task = null;
+        }
+    });
+    _profile_heartbeat_task.schedule(5000);
+}
+
+function path_probe(label, value) {
+    var suffix = "";
+    if (value !== undefined && value !== null) suffix = " value=" + value;
+    profile_mark("path_probe: " + label + suffix);
 }
 
 
@@ -283,7 +310,13 @@ var atlasDict = new Dict("AtlasManifest");
 // MAIN ENTRY POINT
 // ─────────────────────────────────────────────────────────────────────────────
 function build_atlases(signeFolderPath) {
+    _profile_atlas_started = true;
+    if (_profile_heartbeat_task !== null) {
+        _profile_heartbeat_task.cancel();
+        _profile_heartbeat_task = null;
+    }
     profile_mark("build_atlases: start");
+    profile_mark("build_atlases: path received (" + signeFolderPath + ")");
     if (signeFolderPath.charAt(signeFolderPath.length - 1) === "/") {
         signeFolderPath = signeFolderPath.slice(0, -1);
     }
@@ -400,6 +433,8 @@ function force_rebuild(signeFolderPath) {
 function loadbang() {
     profile_reset();
     profile_mark("loadbang");
+    _profile_atlas_started = false;
+    _profile_start_heartbeat();
 
     // Force the UI into its empty, hidden state immediately on boot
     messnamed("SelectedObjectName", "none"); 
@@ -427,6 +462,7 @@ function set_expected_device_count(n) {
 // to the js object in Screen's p MarqueeSelection.
 // Track registered IDs to ignore duplicate registrations (e.g. from Signe_RollCall)
 var _registered_ids = {};
+var _boot_settle_due_ms = 0;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SLOT LIFECYCLE (Phase 1 of fast-path architecture)
@@ -723,7 +759,10 @@ function notify_device_registered(id) {
     }
     // Debounce: wait 150ms after last registration before booting
     if (_boot_settle_task !== null) _boot_settle_task.cancel();
+    _boot_settle_due_ms = (new Date()).getTime() + 150;
     _boot_settle_task = new Task(function() {
+        var late = (new Date()).getTime() - _boot_settle_due_ms;
+        profile_mark("_boot_settle_task fired late=" + late + "ms is_booting=" + is_booting);
         if (is_booting) _do_boot();
     });
     _boot_settle_task.schedule(150);
