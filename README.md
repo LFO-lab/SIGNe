@@ -1,7 +1,8 @@
-Currently under developpement, SIGN/e (Système d’illustrations graphiques pour la notation et l’édition / Symbol-based interface for graphic notation edition) is a Max for Live device allowing the creation of graphical score files from banks of user graphics. 
+SIGN/e • SYMBOL-BASED INTERFACE FOR GRAPHIC NOTATION/EDITION
+Visual editing plugin (AMXD) allowing to write and read graphic scores directly in Ableton Live. It allows to import, move, modify, and animate visual elements (PNGs), opening singular creative scoring possibilities.
 
-Programming: Evan Montpellier. 
-Coordination: Pierre-Luc Lecours. 
-Principal Investigator: Nicolas Bernier.
-Research Project: Performative Notation 
-https://lfo-lab.ca/notation-performative
+Programmed by Evan Montpellier for Laboratoire formes • ondes at the Digital Music Dept. of Université de Montréal.
+
+👁️ https://www.youtube.com/watch?v=vKb5_8wRGYs
+
+🌐 https://lfo-lab.ca/
