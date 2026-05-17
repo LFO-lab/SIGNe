@@ -432,8 +432,8 @@
                     "numinlets": 0,
                     "numoutlets": 1,
                     "outlettype": [ "" ],
-                    "patching_rect": [ 195.0, 616.0, 141.0, 22.0 ],
-                    "text": "r ---ThisObjectIsSelected"
+                    "patching_rect": [ 195.0, 616.0, 231.0, 22.0 ],
+                    "text": "r ---ThisObjectIsLeftmostInSelectedGroup"
                 }
             },
             {
@@ -497,7 +497,7 @@
                         "valueof": {
                             "parameter_enum": [ "val1", "val2" ],
                             "parameter_invisible": 1,
-                            "parameter_longname": "MIDI Trigger Visible",
+                            "parameter_longname": "MIDI Trigger Visible[1]",
                             "parameter_mmax": 1,
                             "parameter_modmode": 0,
                             "parameter_shortname": "MIDI Trigger Visible",
@@ -673,8 +673,8 @@
                     "numinlets": 0,
                     "numoutlets": 1,
                     "outlettype": [ "" ],
-                    "patching_rect": [ 884.0, 60.0, 141.0, 22.0 ],
-                    "text": "r ---ThisObjectIsSelected"
+                    "patching_rect": [ 884.0, 60.0, 231.0, 22.0 ],
+                    "text": "r ---ThisObjectIsLeftmostInSelectedGroup"
                 }
             },
             {
@@ -706,8 +706,8 @@
                     "numinlets": 0,
                     "numoutlets": 1,
                     "outlettype": [ "" ],
-                    "patching_rect": [ 646.0, 841.0, 141.0, 22.0 ],
-                    "text": "r ---ThisObjectIsSelected"
+                    "patching_rect": [ 646.0, 841.0, 231.0, 22.0 ],
+                    "text": "r ---ThisObjectIsLeftmostInSelectedGroup"
                 }
             },
             {
@@ -760,8 +760,8 @@
                     "numinlets": 0,
                     "numoutlets": 1,
                     "outlettype": [ "" ],
-                    "patching_rect": [ 60.0, 75.0, 141.0, 22.0 ],
-                    "text": "r ---ThisObjectIsSelected"
+                    "patching_rect": [ 60.0, 75.0, 231.0, 22.0 ],
+                    "text": "r ---ThisObjectIsLeftmostInSelectedGroup"
                 }
             },
             {
@@ -793,8 +793,8 @@
                     "numinlets": 0,
                     "numoutlets": 1,
                     "outlettype": [ "" ],
-                    "patching_rect": [ 2011.0, 855.0, 141.0, 22.0 ],
-                    "text": "r ---ThisObjectIsSelected"
+                    "patching_rect": [ 2011.0, 855.0, 231.0, 22.0 ],
+                    "text": "r ---ThisObjectIsLeftmostInSelectedGroup"
                 }
             },
             {
@@ -826,8 +826,8 @@
                     "numinlets": 0,
                     "numoutlets": 1,
                     "outlettype": [ "" ],
-                    "patching_rect": [ 1470.0, 749.0, 141.0, 22.0 ],
-                    "text": "r ---ThisObjectIsSelected"
+                    "patching_rect": [ 1470.0, 749.0, 231.0, 22.0 ],
+                    "text": "r ---ThisObjectIsLeftmostInSelectedGroup"
                 }
             },
             {
@@ -943,8 +943,8 @@
                     "numinlets": 0,
                     "numoutlets": 1,
                     "outlettype": [ "" ],
-                    "patching_rect": [ 1425.0, 495.0, 141.0, 22.0 ],
-                    "text": "r ---ThisObjectIsSelected"
+                    "patching_rect": [ 1425.0, 495.0, 231.0, 22.0 ],
+                    "text": "r ---ThisObjectIsLeftmostInSelectedGroup"
                 }
             },
             {
@@ -1476,17 +1476,8 @@
             },
             {
                 "patchline": {
-                    "destination": [ "obj-445", 0 ],
-                    "midpoints": [ 1644.5, 633.7675827741623, 1434.5, 633.7675827741623 ],
-                    "order": 1,
-                    "source": [ "obj-17", 0 ]
-                }
-            },
-            {
-                "patchline": {
                     "destination": [ "obj-47", 0 ],
                     "midpoints": [ 1644.5, 662.5330147743225, 1554.5, 662.5330147743225 ],
-                    "order": 0,
                     "source": [ "obj-17", 0 ]
                 }
             },
