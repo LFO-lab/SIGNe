@@ -1,0 +1,65 @@
+<jittershader name="signe_selection_wireframe">
+	<param name="position" type="vec3" state="POSITION" />
+	<param name="modelViewProjectionMatrix" type="mat4" state="MODELVIEW_PROJECTION_MATRIX" />
+
+	<param name="instance_transform" type="vec4" state="VERTEX_ATTR0" />
+	<param name="instance_scale"     type="vec4" state="VERTEX_ATTR1" />
+	<param name="instance_color"     type="vec4" state="VERTEX_ATTR2" />
+
+	<language name="glsl" version="1.5">
+		<bind param="position"                  program="vp" />
+		<bind param="modelViewProjectionMatrix" program="vp" />
+		<bind param="instance_transform"        program="vp" />
+		<bind param="instance_scale"            program="vp" />
+		<bind param="instance_color"            program="vp" />
+
+		<program name="vp" type="vertex">
+		<![CDATA[
+		#version 330 core
+		uniform mat4 modelViewProjectionMatrix;
+		in vec3 position;
+
+		in vec4 instance_transform;  // [x, y, rotation_radians, unused]
+		in vec4 instance_scale;      // [sx, sy, unused, unused]
+		in vec4 instance_color;      // [r, g, b, a]
+
+		out jit_PerVertex {
+			vec4 color;
+		} jit_out;
+
+		void main() {
+			vec2 pos     = position.xy;
+			vec2 scale   = instance_scale.xy;
+			float rot    = instance_transform.z;
+
+			// Scale-then-rotate-then-translate, matching the per-vertex math
+			// done in draw_selections() today.
+			vec2 scaled = pos * scale;
+			float s = sin(rot);
+			float c = cos(rot);
+			mat2 rot_mat = mat2(c, -s, s, c);
+			vec2 rotated = rot_mat * scaled;
+
+			vec3 final_pos = vec3(rotated + instance_transform.xy, 0.0);
+			gl_Position = modelViewProjectionMatrix * vec4(final_pos, 1.0);
+
+			jit_out.color = instance_color;
+		}
+		]]>
+		</program>
+
+		<program name="fp" type="fragment">
+		<![CDATA[
+		#version 330 core
+		in jit_PerVertex {
+			vec4 color;
+		} jit_in;
+		out vec4 fragColor;
+
+		void main() {
+			fragColor = jit_in.color;
+		}
+		]]>
+		</program>
+	</language>
+</jittershader>
