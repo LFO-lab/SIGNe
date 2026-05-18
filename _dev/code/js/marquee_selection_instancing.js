@@ -1,7 +1,7 @@
 autowatch = 1;
 
 inlets = 1;
-outlets = 11; // 0-4 for UI, 5-9 for GPU Triggers
+outlets = 15; // 0-4 for UI, 5-9 for Symbol GPU instancing, 10 for MIDI GPU instancing, 11-14 for wireframe GPU instancing
 
 // =========================================================
 // STATE VARIABLES & SETTINGS
@@ -18,7 +18,7 @@ var _boot_settle_task = null;    // debounce timer — fires 150ms after last re
 // PROFILING
 // =========================================================
 var _profile_t0 = 0;
-var _profile_enabled = false; // set to false in production
+var _profile_enabled = true; // set to false in production
 var _profile_heartbeat_task = null;
 var _profile_heartbeat_count = 0;
 var _profile_atlas_started = false;
@@ -98,6 +98,14 @@ var _stats_update_math_max_us = 0;
 var _stats_update_math_calls = 0;
 var _stats_draw_sel_total_us = 0;
 var _stats_check_frust_total_us = 0;
+// Wireframe-instancing path stats. Separate from draw_sel so the two paths
+// can be compared apples-to-apples. _stats_wire_max_count tracks the largest
+// instance count observed in this reporting window — useful for confirming
+// the active wireframe count rather than the pool size.
+var _stats_update_wire_total_us = 0;
+var _stats_update_wire_calls = 0;
+var _stats_update_wire_max_us = 0;
+var _stats_wire_max_count = 0;
 var _stats_handler_calls = {};
 
 function stats_enable(v) {
@@ -146,6 +154,16 @@ function _stats_maybe_dump() {
         + " | free_slots=" + _free_slots.length
         + " | next_slot=" + _next_slot
         + "\n");
+    if (_stats_update_wire_calls > 0 || _wireframe_mode === 1) {
+        var avg_wire = (_stats_update_wire_calls > 0)
+            ? (_stats_update_wire_total_us / _stats_update_wire_calls).toFixed(1) : "0";
+        post("[STATS]   update_wireframes: calls=" + _stats_update_wire_calls
+            + " avg=" + avg_wire + "us"
+            + " max=" + _stats_update_wire_max_us + "us"
+            + " total=" + _stats_update_wire_total_us + "us"
+            + " | max_count=" + _stats_wire_max_count
+            + "\n");
+    }
     
     var handler_summary = "";
     for (var name in _stats_handler_calls) {
@@ -163,6 +181,10 @@ function _stats_maybe_dump() {
     _stats_update_math_calls = 0;
     _stats_draw_sel_total_us = 0;
     _stats_check_frust_total_us = 0;
+    _stats_update_wire_total_us = 0;
+    _stats_update_wire_calls = 0;
+    _stats_update_wire_max_us = 0;
+    _stats_wire_max_count = 0;
     _stats_handler_calls = {};
 }
 
@@ -775,7 +797,7 @@ function _do_boot() {
     profile_mark("_do_boot: building atlas cache");
     _build_atlas_index_cache();
     profile_mark("_do_boot: draw_selections");
-    draw_selections();
+    redraw_selection_visuals();
     profile_mark("_do_boot: check_frustum");
     check_frustum();
     profile_mark("_do_boot: request_rebuild");
@@ -869,7 +891,7 @@ function bang() {
     // per frame by automation/modulation. Run at most once per render frame.
     if (_dirty_selections) {
         var _t1 = _stats_enabled ? _now_us() : 0;
-        draw_selections();
+        redraw_selection_visuals();
         if (_stats_enabled) _stats_draw_sel_total_us += (_now_us() - _t1);
         _dirty_selections = false;
     }
@@ -941,7 +963,7 @@ function set_aspect_ratio(val) {
 
 function draw_all_bounds(v) {
     showAllBounds = v;
-    if (!is_booting) draw_selections(); 
+    if (!is_booting) redraw_selection_visuals(); 
 }
 
 function request_rebuild() {
@@ -1132,7 +1154,7 @@ function picker_hit(target, state) {
             if (mathHitID == null) {
                 isDraggingMarquee = true; isDraggingGroup = false; isScalingGroup = false; isRotatingGroup = false; isAdjustingOpacityGroup = false;
                 got3DAnchor = false; a2x = (curX / winW) * 2.0 - 1.0; a2y = 1.0 - (curY / winH) * 2.0;
-                outlet(1, "getposition"); draw_selections();
+                outlet(1, "getposition"); redraw_selection_visuals();
             } else {
                 var registry = _reg();
                 var isSelected = registry.get(mathHitID + "::selected");
@@ -1141,7 +1163,7 @@ function picker_hit(target, state) {
                     if (isSelected == 1) {
                         registry.set(mathHitID + "::selected", 0);
                         outlet(2, "send", mathHitID); outlet(2, "selected", 0); outlet(2, "selected_via_mouse", 0); 
-                        draw_selections();
+                        redraw_selection_visuals();
                         return;
                     } else {
                         registry.set(mathHitID + "::selected", 1);
@@ -1180,7 +1202,7 @@ function picker_hit(target, state) {
                 else isDraggingGroup = true;
                 
                 got3DAnchor = false; take_centroid_snapshot(registry);
-                outlet(1, "getposition"); draw_selections();
+                outlet(1, "getposition"); redraw_selection_visuals();
             }
         }
     }
@@ -1591,7 +1613,7 @@ function ui_lock(id, state) {
     if (!registry.contains(id)) return;
     
     registry.set(id + "::locked", state);
-    if (!is_booting) draw_selections(); 
+    if (!is_booting) redraw_selection_visuals(); 
     
     if (registry.get(id + "::selected") == 1) {
         update_properties_window(id);
@@ -1616,7 +1638,7 @@ function ui_lock_all(state) {
         }
     }
     
-    if (!is_booting) draw_selections();
+    if (!is_booting) redraw_selection_visuals();
     
     if (activeSelectedID !== null) {
         update_properties_window(activeSelectedID);
@@ -1646,7 +1668,7 @@ function ui_select(target) {
         var x = registry.get(target + "::scale_x") || 1.0, y = registry.get(target + "::scale_y") || 1.0;
         activeRatio = (x !== 0) ? (y / x) : 1.0;
     }
-    if (!is_booting) draw_selections();
+    if (!is_booting) redraw_selection_visuals();
 }
 
 function live_device_selected(device_id) {
@@ -2243,6 +2265,20 @@ function group_prop_symbol(propName, filename) {
     if (!is_booting) mark_dirty(0, 0, 0, 1, 0);
 }
 
+// =========================================================
+// Dispatcher: routes selection-redraw calls to legacy or instanced path
+// based on _wireframe_mode. All sites that previously called
+// draw_selections() directly now call this instead. The two underlying
+// functions remain callable independently for testing/diagnostics.
+// =========================================================
+function redraw_selection_visuals() {
+    if (_wireframe_mode === 1) {
+        update_wireframes();
+    } else {
+        draw_selections();
+    }
+}
+
 function draw_selections() {
     var registry = _reg();
     var keys = registry.getkeys();
@@ -2286,6 +2322,207 @@ function draw_selections() {
                 outlet(3, "glend");
             }
         }
+    }
+}
+
+// =========================================================
+// WIREFRAME GPU INSTANCING
+// ---------------------------------------------------------
+// Alternative path to draw_selections() that uses a single instanced draw call
+// on a jit.gl.mesh, instead of per-object immediate-mode draws via
+// jit.gl.sketch. Selectable at runtime via the `wireframe_mode` message:
+//   wireframe_mode 0   → legacy path (draw_selections), keeps existing behaviour
+//   wireframe_mode 1   → instanced path (update_wireframes)
+// Default is legacy (0) until the new path is validated.
+//
+// Outlet plan:
+//   11: control messages to the wireframe mesh (enable / automatic)
+//   12: jit_matrix notification for Wire_Xform_Data  (4 planes: x, y, rot_radians, 0)
+//   13: jit_matrix notification for Wire_Scale_Data  (4 planes: sx, sy, 0, 0)
+//   14: jit_matrix notification for Wire_Color_Data  (4 planes: r, g, b, a)
+//
+// Instance count is driven by matrix dim (which propagates to the
+// downstream jit.gl.buffer's dim), NOT by any explicit message — jit.gl.mesh
+// has no instance_count message.
+//
+// Capacity is fixed at WIREFRAME_POOL_SIZE; if more wireframes are requested
+// in one frame, the overflow is silently dropped (selection itself is not
+// affected, only the wireframe rendering).
+// =========================================================
+
+var WIREFRAME_POOL_SIZE = 512;
+var _wireframe_mode = 0;          // 0 = legacy, 1 = instanced
+var _wire_last_count = -1;        // last active instance count (sentinel for first-fire)
+
+// Update-rate throttle. With _wire_update_divisor = N, update_wireframes()
+// only performs the actual write+notify work on every Nth call; intermediate
+// calls early-return after incrementing the counter. The mesh continues
+// rendering whatever's in its buffers from the previous update, which at
+// 30Hz (divisor=2) or 20Hz (divisor=3) remains visually fluid.
+//
+// Configured via the wireframe_update_rate message: e.g. `wireframe_update_rate 2`
+// for half-rate updates. Default 1 = update every call.
+var _wire_update_divisor = 1;
+var _wire_frame_counter  = 0;
+
+// Staging buffers — collected into during pass 1, then flushed to the JS
+// jit.matrix instances during pass 2. Persistent (we reset length to 0
+// each frame rather than allocating) to avoid GC pressure.
+var _wire_xform_buf = [];   // [x, y, rotRad, 0, ...] per instance
+var _wire_scale_buf = [];   // [sx, sy, 0, 0, ...]    per instance
+var _wire_color_buf = [];   // [r, g, b, 1, ...]      per instance
+
+// JS-owned jit.matrix instances. Initial dim of 1; we'll resize each frame
+// to match the active wireframe count, which drives the downstream
+// jit.gl.buffer's dimensions and therefore the mesh's instance count.
+var _wire_xform_mat = new JitterMatrix("Wire_Xform_Data", 4, "float32", 1);
+var _wire_scale_mat = new JitterMatrix("Wire_Scale_Data", 4, "float32", 1);
+var _wire_color_mat = new JitterMatrix("Wire_Color_Data", 4, "float32", 1);
+
+function wireframe_mode(v) {
+    _wireframe_mode = (v == 1) ? 1 : 0;
+    if (_wireframe_mode === 0) {
+        // Switching back to legacy: hide the mesh and reset count tracking.
+        outlet(11, "enable", 0);
+        outlet(11, "automatic", 0);
+        _wire_last_count = -1;
+    } else {
+        // Switching to instanced: force a fresh update on next frame regardless
+        // of current count, since the previous tracked count is stale.
+        _wire_last_count = -1;
+    }
+}
+
+function wireframe_update_rate(n) {
+    n = parseInt(n);
+    if (isNaN(n) || n < 1) n = 1;
+    _wire_update_divisor = n;
+    _wire_frame_counter = 0;
+    if (_stats_enabled) {
+        post("[WIREFRAME] update divisor = " + n
+            + " (effective rate at 60Hz bangs ≈ " + (60 / n).toFixed(1) + " Hz)\n");
+    }
+}
+
+function update_wireframes() {
+    // Throttle: skip frames per _wire_update_divisor. Mesh keeps drawing
+    // whatever's in its buffers from the last actual update; at 30Hz the
+    // motion is still visually fluid for SIGNe's use case, and we save
+    // the per-frame buffer-upload + draw cost on every skipped frame.
+    _wire_frame_counter++;
+    if (_wire_frame_counter < _wire_update_divisor) {
+        return;
+    }
+    _wire_frame_counter = 0;
+
+    var _wire_t0 = _stats_enabled ? _now_us() : 0;
+
+    // ───── Pass 1: collect wireframe data into staging buffers ─────
+    _wire_xform_buf.length = 0;
+    _wire_scale_buf.length = 0;
+    _wire_color_buf.length = 0;
+
+    var registry = _reg();
+    var keys = registry.getkeys();
+    var w = 0;  // active wireframe-instance count
+
+    if (keys != null) {
+        if (typeof keys === "string") keys = [keys];
+
+        for (var i = 0; i < keys.length; i++) {
+            if (w >= WIREFRAME_POOL_SIZE) break;
+            var id = keys[i];
+            var isSelected = (registry.get(id + "::selected") == 1);
+            var isLocked   = (registry.get(id + "::locked")   == 1);
+            if (!(isSelected || showAllBounds === 1)) continue;
+
+            // Colour selection — mirrors draw_selections() exactly.
+            var r, g, b;
+            if (isLocked)        { r = 0.4; g = 0.8; b = 1.0; }
+            else if (isSelected) { r = 1.0; g = 0.8; b = 0.0; }
+            else                 { r = 1.0; g = 0.0; b = 0.0; } // showAllBounds, not selected
+
+            // Position, bounds, rotation, duplication — mirrors draw_selections().
+            var _p = _get_pos(id, registry);
+            var x = _p[0], y = _p[1];
+            var sx = registry.get(id + "::bounds_x");
+            if (sx == null) sx = registry.get(id + "::scale_x") || 0.0;
+            var sy = registry.get(id + "::bounds_y");
+            if (sy == null) sy = registry.get(id + "::scale_y") || 0.0;
+            var rot     = registry.get(id + "::rotation")  || 0.0;
+            var gRot    = registry.get(id + "::group_rot") || 0.0;
+            var count   = registry.get(id + "::count")     || 1;
+            var spacing = registry.get(id + "::spacing")   || 0.0;
+            var gCos = Math.cos(-gRot * 2 * Math.PI);
+            var gSin = Math.sin(-gRot * 2 * Math.PI);
+
+            // Per-instance: centre position, half-bounds, total rotation (radians).
+            // The shader does the per-corner scale/rotate/translate from the
+            // unit-quad's vertices.
+            var totalRotRad = -(rot + gRot) * 2 * Math.PI;
+
+            for (var j = 0; j < count; j++) {
+                if (w >= WIREFRAME_POOL_SIZE) break;
+                var ix = x + (j * spacing * gCos);
+                var iy = y + (j * spacing * gSin);
+                _wire_xform_buf.push(ix, iy, totalRotRad, 0);
+                _wire_scale_buf.push(sx, sy, 0, 0);
+                _wire_color_buf.push(r, g, b, 1);
+                w++;
+            }
+        }
+    }
+
+    // ───── Mesh enable/disable transitions ─────
+    // Toggle automatic + enable only on count-state transitions (0↔N), not
+    // every frame, to minimise message traffic. The instance count is driven
+    // by the buffer dimensions (set via matrix dim below), not by any
+    // explicit instance_count message — jit.gl.mesh has no such message.
+    if (w !== _wire_last_count) {
+        if (w === 0) {
+            outlet(11, "enable", 0);
+            outlet(11, "automatic", 0);
+        } else if (_wire_last_count <= 0) {
+            outlet(11, "enable", 1);
+            outlet(11, "automatic", 1);
+        }
+        _wire_last_count = w;
+    }
+
+    // ───── Pass 2: resize matrices and write the data ─────
+    // Resize must happen before setcell1d so the indices are in range. The
+    // matrix dim change propagates to the downstream jit.gl.buffer, which
+    // sizes the mesh's instance count.
+    if (w > 0) {
+        _wire_xform_mat.dim = w;
+        _wire_scale_mat.dim = w;
+        _wire_color_mat.dim = w;
+
+        for (var k = 0; k < w; k++) {
+            var b4 = k * 4;
+            _wire_xform_mat.setcell1d(k,
+                _wire_xform_buf[b4],   _wire_xform_buf[b4+1],
+                _wire_xform_buf[b4+2], _wire_xform_buf[b4+3]);
+            _wire_scale_mat.setcell1d(k,
+                _wire_scale_buf[b4],   _wire_scale_buf[b4+1],
+                _wire_scale_buf[b4+2], _wire_scale_buf[b4+3]);
+            _wire_color_mat.setcell1d(k,
+                _wire_color_buf[b4],   _wire_color_buf[b4+1],
+                _wire_color_buf[b4+2], _wire_color_buf[b4+3]);
+        }
+
+        // Emit jit_matrix notifications so the downstream buffers re-read.
+        outlet(12, "jit_matrix", _wire_xform_mat.name);
+        outlet(13, "jit_matrix", _wire_scale_mat.name);
+        outlet(14, "jit_matrix", _wire_color_mat.name);
+    }
+
+    if (_stats_enabled) {
+        var dt = _now_us() - _wire_t0;
+        _stats_update_wire_total_us += dt;
+        _stats_update_wire_calls++;
+        if (dt > _stats_update_wire_max_us) _stats_update_wire_max_us = dt;
+        if (w  > _stats_wire_max_count)     _stats_wire_max_count = w;
     }
 }
 

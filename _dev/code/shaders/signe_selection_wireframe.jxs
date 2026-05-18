@@ -37,7 +37,7 @@
 			vec2 scaled = pos * scale;
 			float s = sin(rot);
 			float c = cos(rot);
-			mat2 rot_mat = mat2(c, -s, s, c);
+			mat2 rot_mat = mat2(c, s, -s, c);
 			vec2 rotated = rot_mat * scaled;
 
 			vec3 final_pos = vec3(rotated + instance_transform.xy, 0.0);
