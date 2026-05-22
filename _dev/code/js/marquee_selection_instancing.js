@@ -2489,10 +2489,18 @@ function update_wireframes() {
             // Position, bounds, rotation, duplication — mirrors draw_selections().
             var _p = _get_pos(id, registry);
             var x = _p[0], y = _p[1];
-            var sx = registry.get(id + "::bounds_x");
-            if (sx == null) sx = registry.get(id + "::scale_x") || 0.0;
-            var sy = registry.get(id + "::bounds_y");
-            if (sy == null) sy = registry.get(id + "::scale_y") || 0.0;
+            // Live scale: read the current scale factor from raw_matScl (the GPU
+            // matrix the fast path drives during automation), mirroring how
+            // _get_pos reads live position from raw_matPos. This makes the wireframe
+            // track scale in real time during automation playback, instead of using
+            // the registry ::bounds_x/::scale_x which go stale (their dial_scale_x /
+            // ui_bounds_x writers are gated off during automation). Relies on all
+            // instances sharing the same base mesh so the scale factor maps directly
+            // to wireframe extent (unit-quad base). _get_scl falls back to the
+            // registry scale when no GPU slot is mapped (e.g. pre-boot).
+            var _s = _get_scl(id, registry);
+            var sx = _s[0];
+            var sy = _s[1];
             var rot     = registry.get(id + "::rotation")  || 0.0;
             var gRot    = registry.get(id + "::group_rot") || 0.0;
             var count   = registry.get(id + "::count")     || 1;
