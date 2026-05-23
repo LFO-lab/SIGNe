@@ -2520,8 +2520,23 @@ function update_wireframes() {
             var _s = _get_scl(id, registry);
             var sx = _s[0];
             var sy = _s[1];
-            var rot     = registry.get(id + "::rotation")  || 0.0;
-            var gRot    = registry.get(id + "::group_rot") || 0.0;
+            // Live rotation: per-object rotation lives in raw_matPos channel 3
+            // (written by _set_raw_rotation), and group rotation lives in
+            // raw_matLay channel 1 (written by _set_raw_grouprot). Read both from
+            // their matrices so the wireframe tracks automated rotation in real
+            // time, mirroring the live position/scale reads above. The registry
+            // ::rotation / ::group_rot go stale during automation (their writers
+            // are on the gated-off slow path). Fall back to the registry when no
+            // GPU slot is mapped (e.g. pre-boot).
+            var _slot = _slot_for_id[id];
+            var rot, gRot;
+            if (_slot !== undefined && _slot >= 0) {
+                try { rot  = raw_matPos.getcell(_slot)[3]; } catch (e) { rot  = registry.get(id + "::rotation")  || 0.0; }
+                try { gRot = raw_matLay.getcell(_slot)[1]; } catch (e) { gRot = registry.get(id + "::group_rot") || 0.0; }
+            } else {
+                rot  = registry.get(id + "::rotation")  || 0.0;
+                gRot = registry.get(id + "::group_rot") || 0.0;
+            }
             var count   = registry.get(id + "::count")     || 1;
             var spacing = registry.get(id + "::spacing")   || 0.0;
             var gCos = Math.cos(-gRot * 2 * Math.PI);
