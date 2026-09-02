@@ -1,0 +1,13 @@
+# Max for Live devices are a binary container wrapping plain-text patcher JSON.
+# With the textconv driver configured, `git diff` and `git log -p` render them
+# as readable patcher JSON instead of "Bin 3103816 -> 3653532 bytes". Git still
+# stores and merges them as binary.
+#
+# Configure once per clone (requires patchprobe: npm i -g patchprobe):
+#   git config diff.amxd.textconv "patchprobe json"
+#   git config diff.amxd.cachetextconv true
+*.amxd diff=amxd
+
+# Patcher and shader sources are text; keep them out of binary heuristics.
+*.maxpat text
+*.jxs    text
