@@ -149,6 +149,31 @@ Patcher edits:
 
 Nothing to replay — this branch does not touch it. Take `main`'s version.
 
+---
+
+## Pre-existing problem on this branch: SIGNe-Text is unfrozen
+
+**`amxd/SIGNe-Text.amxd` on this branch is committed in an unfrozen state.**
+Confirm with:
+
+```
+patchprobe deps amxd/SIGNe-Text.amxd
+```
+
+An unfrozen device resolves its abstractions, scripts and images through the
+Max search path of whoever opens it. It works on the machine that built it and
+breaks everywhere else, so this branch would ship a broken Text device if
+released as-is. `main`'s copy is frozen and carries 26 embedded files.
+
+This predates the bugfix work and is unrelated to it — worth fixing whenever
+this branch is next opened, independently of the reconciliation. Re-freeze
+before doing anything else, so that later diffs compare like with like.
+
+While checking, note that this branch's SIGNe-Screen carries 19 embedded files
+against `main`'s 17. The extra two are `jit.gl.spoutsender.mxe64` and
+`marquee_selection_instancing_v8.js`, both of which belong to the optimization
+work. That difference is expected.
+
 For the record, `main` changed it so the drop button reads "drop file" rather
 than the default image's filename: `sprintf %s/3DivisionsWhite.png` no longer
 feeds `regexp .+/(.+)`, and the sentinel branch goes through a `[t b b]` that
