@@ -486,6 +486,10 @@ function _assign_slot(id) {
         }
     }
     _slot_for_id[id] = slot;
+    // Clear whatever the slot held before this object owned it — see
+    // _seed_raw_pos_from_registry. Must happen after _slot_for_id is set,
+    // since the raw writers resolve the slot through it.
+    _seed_raw_pos_from_registry(id);
     // Tell the Symbol device its slot via dedicated per-device receive
     messnamed(id + "_SIGNe_AssignSlot", slot);
     return slot;
@@ -527,6 +531,29 @@ function _set_raw_pos(id, x, y) {
     } catch (e) {
         // matrix not ready; skip silently
     }
+}
+
+function _set_raw_pos_x(id, x) {
+    var slot = _slot_for_id[id]; if (slot === undefined || slot < 0) return;
+    try { var c = raw_matPos.getcell(slot); raw_matPos.setcell1d(slot, x, c[1], c[2], c[3]); }
+    catch (e) {}
+}
+// Seed a slot's position from the registry.
+//
+// An object's position is recorded in three places — the registry, the device's
+// own parameters, and raw_matPos — and they only agree if every path that sets
+// one sets the others. A slot handed out by _assign_slot starts with whatever
+// it already held: zeros when fresh, the previous occupant's coordinates when
+// recycled. Seeding it here means an object can never render at a deleted
+// object's position while its device draws itself somewhere else.
+//
+// Deliberately reads the registry rather than calling _get_pos, which prefers
+// the matrix — the very value being corrected.
+function _seed_raw_pos_from_registry(id) {
+    var registry = _reg();
+    var x = parseFloat(registry.get(id + "::x"));
+    var y = parseFloat(registry.get(id + "::y"));
+    _set_raw_pos(id, isNaN(x) ? 0.0 : x, isNaN(y) ? 0.0 : y);
 }
 
 // Phase 3: per-plane writers for raw_matPos (preserve other channels).
@@ -1555,6 +1582,13 @@ function drop_new_object(id) {
     if (!registry.contains(id)) return;
 
     registry.set(id + "::x", dropX);
+    // Keep raw_matPos in step with the registry, as the drag handlers do.
+    // Without this the object's bounds — drawn from the matrix — and the device's
+    // own rendering, driven by the move_x below, disagree by dropX. The next
+    // drag then reads the stale matrix value as its origin via _get_pos and
+    // silently discards the drop position. Only the x plane is written: y comes
+    // from the device's own Position Y initial, which has not arrived yet.
+    _set_raw_pos_x(id, dropX);
     outlet(2, "send", id);
     outlet(2, "move_x", dropX);
     
