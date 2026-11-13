@@ -4,8 +4,9 @@ autowatch = 1;
 var transportPos = 0.0;
 var zoom = 12.0; // Replaced visibleBars
 var aspectRatio = 1.77; 
-var beatsPerBar = 4.0;
-var bpm = 120.0;
+var beatsPerBar = 4.0;     // time signature numerator
+var beatUnit = 4.0;        // time signature denominator
+var bpm = 120.0;           // Live tempo, in quarter notes per minute
 var showTimeMode = 0; 
 var yOffset = -0.9; 
 var textBaseScale = 0.05; 
@@ -50,6 +51,9 @@ function msg_float(v) { transportPos = v; }
 function zoom_level(v) { zoom = Math.max(1.0, v); } // Send 'zoom_level $1' from your Max dial
 function aspect_ratio(v) { aspectRatio = v; } 
 function beats_per_bar(v) { beatsPerBar = Math.max(1, v); }
+// Live's tempo counts quarter notes, so the denominator is needed to turn
+// numerator beats into time (e.g. 6/8 is 3 quarters per bar, not 6).
+function signature_denominator(v) { if (v > 0) beatUnit = v; }
 function set_bpm(v) { bpm = Math.max(1, v); }
 function set_mode(v) { showTimeMode = v; }
 
@@ -112,8 +116,9 @@ function bang() {
         if (showTimeMode === 1) {
             var zeroIndexedBar = i - 1; 
             var isNegative = zeroIndexedBar < 0;
-            var totalBeats = Math.abs(zeroIndexedBar) * beatsPerBar;
-            var totalSeconds = totalBeats * (60.0 / bpm);
+            var quartersPerBar = beatsPerBar * (4.0 / beatUnit);
+            var totalQuarters = Math.abs(zeroIndexedBar) * quartersPerBar;
+            var totalSeconds = totalQuarters * (60.0 / bpm);
             var mins = Math.floor(totalSeconds / 60);
             var secs = Math.floor(totalSeconds % 60);
             var secStr = (secs < 10) ? "0" + secs : secs;
